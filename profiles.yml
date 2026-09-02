@@ -1,0 +1,10 @@
+# Repo-local dbt profile. dbt reads this before ~/.dbt/profiles.yml, so the
+# project runs with no machine setup beyond `pip install -r requirements.txt`.
+# DuckDB is the dev and CI warehouse; the database file is gitignored.
+health_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: health_analytics.duckdb
+      threads: 4

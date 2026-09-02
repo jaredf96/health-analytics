@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+.env
+
+# DuckDB database files
+*.duckdb
+*.duckdb.wal
+
+# OS / editor
+.DS_Store
