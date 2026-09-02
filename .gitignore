@@ -16,3 +16,6 @@ logs/
 
 # OS / editor
 .DS_Store
+
+# Raw source data fetched by scripts/fetch_synthea.py; never committed
+data/raw/

@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: synthea
+    description: >
+      Synthea synthetic EHR sample published by MITRE
+      (synthea_sample_data_csv_nov2021.zip, 1,163 patients, Massachusetts).
+      Entirely synthetic: no real patients, no PHI. scripts/fetch_synthea.py
+      lands the CSVs in data/raw/synthea/ and dbt-duckdb reads them in place.
+      Every column arrives as text; typing happens in the staging layer.
+    meta:
+      external_location: "read_csv('data/raw/synthea/{name}.csv', header=true, all_varchar=true)"
+    tables:
+      - name: patients
+        description: One row per synthetic patient with demographics, address, and lifetime cost totals.
+        columns:
+          - name: Id
+            description: Patient UUID, primary key.
+            data_tests:
+              - unique
+              - not_null

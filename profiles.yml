@@ -1,6 +1,9 @@
-# Repo-local dbt profile. dbt reads this before ~/.dbt/profiles.yml, so the
-# project runs with no machine setup beyond `pip install -r requirements.txt`.
-# DuckDB is the dev and CI warehouse; the database file is gitignored.
+# Repo-local dbt profile. dbt picks it up when run from the repo root (the
+# working directory is checked before ~/.dbt). Setup on a fresh clone:
+#   pip install -r requirements.txt
+#   python scripts/fetch_synthea.py   # lands the source CSVs in data/raw/
+#   dbt build
+# DuckDB is the dev warehouse. The database file and data/raw/ are gitignored.
 health_analytics:
   target: dev
   outputs:
