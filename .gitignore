@@ -20,5 +20,3 @@ logs/
 # Raw source data fetched by scripts/fetch_synthea.py; never committed
 data/raw/
 
-# Private session baton, never committed
-HANDOFF.md
