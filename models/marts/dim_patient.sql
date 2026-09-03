@@ -36,11 +36,12 @@ deidentified as (
         -- age is capped at 90; Safe Harbor aggregates everything over 89
         case
             when death_date is null then null
-            when date_diff('year', birth_date, death_date) >= 90 then 90
-            else date_diff('year', birth_date, death_date)
+            when {{ completed_years('birth_date', 'death_date') }} >= 90 then 90
+            else {{ completed_years('birth_date', 'death_date') }}
         end                                                 as age_at_death_years,
         death_date is not null
-            and date_diff('year', birth_date, death_date) >= 90 as is_age_at_death_90_or_older,
+            and {{ completed_years('birth_date', 'death_date') }} >= 90
+                                                            as is_age_at_death_90_or_older,
 
         -- demographics are not identifiers under Safe Harbor
         gender,

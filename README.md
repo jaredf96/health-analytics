@@ -2,7 +2,8 @@
 
 A dbt project over synthetic electronic health record data: staged source
 feeds, a dimensional model, a data-quality test suite, generated
-documentation, and CI that runs the whole thing on every push.
+documentation, and CI that runs the whole thing on every push to `main`
+and every pull request.
 
 The data is [Synthea](https://synthetichealth.github.io/synthea/), MITRE's
 synthetic patient generator. It is entirely artificial. There is no PHI here
@@ -12,6 +13,9 @@ Every number below comes out of a `dbt build` of this repository. If a number
 here and the build ever disagree, the build is right and this file is a bug.
 
 ## Run it
+
+This builds on Python 3.12, pinned in `.python-version`. The pinned
+dependencies need 3.10 or newer.
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -31,17 +35,18 @@ To read the generated documentation locally:
 .venv/bin/dbt docs generate && .venv/bin/dbt docs serve
 ```
 
-CI publishes the same site to GitHub Pages on every push to `main`,
-once the repository is public. Pages is not available on a private
-repository on the Free plan, so the publishing job is gated on that and
-turns itself on when the repository is made public.
+CI publishes the same site to GitHub Pages on every push to `main`, once
+the repository is public. Pages is not available on a private repository on
+the Free plan, so the publishing job is gated on the repository being public
+and skips itself until then. The gate needs no edit, but Pages does have to
+be enabled once in Settings with its source set to GitHub Actions.
 
 ## What the build produces
 
 13 models and 180 tests, in about 1.5 seconds on a laptop:
 
 ```
-Done. PASS=192 WARN=1 ERROR=0 SKIP=0
+Done. PASS=192 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=193
 ```
 
 The one warning is expected and is explained under Data quality below.
@@ -66,7 +71,7 @@ The dimensions resolve real problems in the feed rather than renaming columns:
   stays on the fact as a degenerate dimension.
 - `dim_payer` sorts the ten payers into self pay, public and commercial.
   Synthea's self-pay stand-in, `NO_INSURANCE`, is the payer on 13,620 of
-  61,459 encounters, more than any real plan, so leaving it uncategorised
+  61,459 encounters, more than any real plan, so leaving it uncategorized
   would inflate commercial volume by 41 percent.
 - `dim_provider` drops the address columns, which repeated the employing
   organization's address rather than carrying a clinician's own. Geography
@@ -97,7 +102,7 @@ encounter reason arrives as a code and a label together or not at all. The
 conditions feed has no key column, so a test asserts its grain instead.
 
 **One test warns, on purpose.** 165 of 61,459 encounters start after the
-patient's recorded death date, three to fourteen days after, across 154
+patient's recorded death date, one to fourteen days after, across 154
 patients. It is an artifact of how Synthea generates a population. Nothing in
 this project filters those rows out: dropping them would make the fact
 disagree with its source for a reason no reader could see. Instead the test
@@ -128,10 +133,11 @@ doing so.
 ```
 models/staging/synthea/   one stg_synthea__<entity>.sql per source feed
 models/marts/             dim_<entity>.sql and fct_<event>.sql
+macros/                   shared SQL expressions, one macro per file
 tests/                    singular tests, one assertion per file
 scripts/fetch_synthea.py  checksum-pinned data fetch, standard library only
 docs/DECISIONS.md         why the project is shaped the way it is
-.github/workflows/        CI: dbt build on every push and pull request
+.github/workflows/        CI: dbt build on main and on every pull request
 ```
 
 ## Warehouse

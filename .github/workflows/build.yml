@@ -69,7 +69,9 @@ jobs:
   # Gated on the repository being public, because GitHub Pages is not
   # available on a private repository on the Free plan and deploy-pages would
   # fail the run for a reason that is not a defect. Making the repository
-  # public turns this job on with no edit here.
+  # public turns this gate on with no edit here. Pages itself still has to be
+  # enabled once in Settings, with its source set to GitHub Actions, or
+  # deploy-pages returns 404.
   publish-docs:
     needs: build
     if: github.event_name == 'push' && github.event.repository.private == false

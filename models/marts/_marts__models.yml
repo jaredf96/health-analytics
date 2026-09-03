@@ -202,7 +202,7 @@ models:
       One row per insurance payer. payer_category splits the ten payers into
       the three groups a payer-mix report needs. NO_INSURANCE is Synthea's
       self-pay stand-in and is the payer on 13,620 of 61,459 encounters, more
-      than any real plan, so it is categorised explicitly rather than left to
+      than any real plan, so it is categorized explicitly rather than left to
       be counted as commercial. The lifetime totals are Synthea's own rollups
       across the population it generated and do not reconcile to this sample's
       encounters.
@@ -406,7 +406,7 @@ models:
         data_tests:
           - not_null
       - name: patient_age_years
-        description: Completed years between birth and the encounter start, capped at 90. 2,061 encounters are capped.
+        description: Completed years between birth and the encounter start, capped at 90. 1,901 encounters are capped.
         data_tests:
           - not_null
       - name: condition_count

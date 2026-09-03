@@ -1,6 +1,6 @@
 -- Singular test, WARN severity: an encounter should not start after the
 -- patient's recorded death date. It does here, on 165 of 61,459 encounters
--- across 154 patients, by three to fourteen days. That is a Synthea
+-- across 154 patients, by one to fourteen days. That is a Synthea
 -- generation artifact, not something this project can fix upstream, and
 -- nothing filters it out. The test is set to warn so the build stays honest:
 -- the number is reported on every run rather than hidden, and it turns into a

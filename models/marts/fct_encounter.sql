@@ -56,8 +56,9 @@ joined as (
 
         -- age at the encounter, capped at 90 to match dim_patient
         case
-            when date_diff('year', p.birth_date, cast(e.started_at as date)) >= 90 then 90
-            else date_diff('year', p.birth_date, cast(e.started_at as date))
+            when {{ completed_years('p.birth_date', 'cast(e.started_at as date)') }} >= 90
+                then 90
+            else {{ completed_years('p.birth_date', 'cast(e.started_at as date)') }}
         end                                                             as patient_age_years,
 
         -- clinical volume

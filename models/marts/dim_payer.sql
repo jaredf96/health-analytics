@@ -1,7 +1,7 @@
 -- Payer dimension. The one rule applied here is payer_category, which splits
 -- the ten payers into the three groups a payer-mix report actually needs.
 -- NO_INSURANCE is Synthea's self-pay stand-in and is the payer on more
--- encounters than any real plan, so it is categorised explicitly rather than
+-- encounters than any real plan, so it is categorized explicitly rather than
 -- left to be mistaken for a commercial plan.
 
 with payers as (
@@ -10,7 +10,7 @@ with payers as (
 
 ),
 
-categorised as (
+categorized as (
 
     select
         payer_id,
@@ -36,4 +36,4 @@ categorised as (
 
 )
 
-select * from categorised
+select * from categorized

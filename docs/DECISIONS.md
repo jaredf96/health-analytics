@@ -26,9 +26,10 @@ the README will only name a warehouse the repo has actually built on.
 clone builds with no machine setup. dbt checks the working directory for a
 profile before falling back to `~/.dbt`.
 
-**Consequence.** dbt only finds it when launched from the repo root. CI and the
-README quickstart set `DBT_PROFILES_DIR` to the repo root so the invocation is
-location-independent. A cloud target will read its credentials through
+**Consequence.** dbt only finds it when launched from the repo root. CI sets
+`DBT_PROFILES_DIR` to the repo root so the invocation there is
+location-independent, and the README tells a reader to run from the root or set
+the same variable. A cloud target will read its credentials through
 `env_var()` in this same file.
 
 ## 3. Dataset: the Synthea nov2021 sample
@@ -94,10 +95,11 @@ folder is configured `+materialized: table`.
 
 **Why.** dbt convention makes staging views because in a warehouse they sit on
 raw tables and cost nothing. Here the sources are files. A view over
-`read_csv` re-parses the file on every query, so each of the ten to fifteen
-tests on a model would re-read up to 310 MB, and the persisted view carries a
-relative path that only resolves when the database file is opened from the
-repo root. As tables, each CSV is parsed once per build, tests hit tables, and
+`read_csv` re-parses the file on every query, so each of the eight to
+twenty-four tests on a staging model would re-read the whole CSV: 19 MB for
+encounters today, and 310 MB for the claims transactions file the same archive
+ships. The persisted view also carries a relative path that only resolves when
+the database file is opened from the repo root. As tables, each CSV is parsed once per build, tests hit tables, and
 the database file is self-contained.
 
 **What would reopen it.** A cloud target with loaded raw tables. At that point
@@ -202,7 +204,7 @@ models. Not a decision, but facts the next decisions rest on.
 - `encounters.PAYER_COVERAGE` is never greater than `TOTAL_CLAIM_COST`, and no
   money column in encounters is negative.
 - `BASE_ENCOUNTER_COST` takes exactly two values, 129.16 and 77.49. It is a
-  Synthea constant, not a modelled price.
+  Synthea constant, not a modeled price.
 - `REASONCODE` is null on 45,502 of 61,459 encounters, and `REASONDESCRIPTION`
   is null on exactly the same rows.
 - Encounter class splits 24,038 wellness, 20,124 ambulatory, 10,837 outpatient,
@@ -254,8 +256,9 @@ one.
 ## 13. Marts key on the natural Synthea identifiers
 
 **Decided 2026-09-03.** The dimensions key on the Synthea UUIDs that arrive in
-the feed. No hashed surrogate keys. `dim_date` is the exception, keyed on
-`date_id`, the day as a `YYYYMMDD` integer.
+the feed. No hashed surrogate keys. Two dimensions key on something other than
+a UUID, because the feed supplies none for them: `dim_date` on `date_id`, the
+day as a `YYYYMMDD` integer, and `dim_encounter_type` on the SNOMED CT code.
 
 **Why.** The UUIDs are already stable, globally unique, and non-null on every
 row, and every relationship test resolves against them. A hash would add a
@@ -288,7 +291,7 @@ it at query time, where the reader can see the clock being read.
 ## 15. A known defect is warned, not filtered
 
 **Decided 2026-09-03.** 165 of 61,459 encounters start after the patient's
-recorded death date, three to fourteen days after, across 154 patients. Nothing
+recorded death date, one to fourteen days after, across 154 patients. Nothing
 filters them. `tests/assert_encounter_not_after_patient_death.sql` asserts the
 rule and is configured `severity: warn`, so `dbt build` reports the count on
 every run and completes.
@@ -326,7 +329,7 @@ column because it describes the directory faithfully, and both the model and
 its documentation now say plainly that the fact cannot use it.
 
 **What would reopen it.** A dataset whose encounters reference more than one
-specialty. This is a property of the Synthea sample, not of the modelling.
+specialty. This is a property of the Synthea sample, not of the modeling.
 
 ## 17. The star schema came before the rest of the feeds
 
@@ -363,3 +366,37 @@ ingestion step and reopening section 4, not adding a second block to
 `profiles.yml`. Configuration alone would demonstrate syntax rather than a
 warehouse the repo has built on, which is exactly what the README refuses to
 claim.
+
+## 18. Age is completed years, not calendar-year boundaries
+
+**Decided 2026-09-03**, after an audit run against the built warehouse before
+the repository was made public.
+
+Both age columns computed `date_diff('year', birth, event)`. DuckDB reads that
+as the number of calendar-year boundaries crossed, which is not age: a birth on
+1990-12-31 and a date of 2020-01-01 returns 30, where the completed age is 29.
+It disagreed with the completed age on 29,831 of the 61,459 rows in
+`fct_encounter` and on 94 of the 163 deceased patients in `dim_patient`, so the
+difference was the common case rather than an edge case. Both columns were
+documented as completed years throughout, so the code was wrong and the
+descriptions were right.
+
+`macros/completed_years.sql` now holds the expression and both models call it.
+It subtracts a year when the birthday has not yet arrived in the event year,
+agrees with DuckDB's two-argument `age()` on every row in the build, and reads
+no clock, because the caller supplies both endpoints.
+
+**Why a macro.** The rule was already duplicated across two models and would
+have been duplicated again by any mart that reports an age. One definition that
+both models call is the difference between a rule and a coincidence.
+
+**Consequence.** `fct_encounter.patient_age_years` reports 90 on 1,901
+encounters rather than 2,061. The 160 encounters that moved report 89, which
+Safe Harbor permits, so nothing is disclosed that was hidden before. The old
+expression could only ever overstate an age, so it over-applied the cap and
+never under-applied it; `is_age_at_death_90_or_older` is true on the same 15
+patients either way, and section 12 is unaffected.
+
+**What would reopen it.** A warehouse whose `date_diff` already means completed
+years. The macro would then be a wrapper over the native function rather than a
+correction to it.
