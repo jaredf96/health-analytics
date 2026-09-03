@@ -148,3 +148,73 @@ Not a decision, but the facts the next decisions will rest on.
   is the reliable payer reference.
 - The sum of CHARGE lines does not reconcile to `encounters.TOTAL_CLAIM_COST`
   (206.9 million versus 255.0 million). No model may claim the two agree.
+
+## 9. Encounter timestamps stay UTC
+
+**Decided 2026-09-03.** `encounters.START` and `STOP` arrive as ISO 8601 with
+a `Z` suffix (`2019-02-17T05:07:38Z`). `stg_synthea__encounters` casts them to
+`timestamp`, which keeps the UTC wall clock, rather than to `timestamptz`.
+
+**Why.** A `timestamptz` cast in DuckDB resolves the value against the session
+time zone, so the same CSV builds different timestamps on a laptop in New York
+and in a CI runner on UTC. Every number this repo publishes has to be
+reproducible from a `dbt build`, so a machine-dependent cast is disqualifying.
+Casting to `timestamp` records exactly what the file says.
+
+**Consequence.** Downstream models read these as UTC. Anything that needs local
+clock time, such as an hour-of-day admission pattern, has to convert
+explicitly and say which zone it converted to. The column descriptions say UTC
+so nobody has to infer it.
+
+## 10. The conditions grain is asserted, not keyed
+
+**Decided 2026-09-03.** `conditions.csv` has no key column. Staging does not
+add a surrogate key; instead `tests/assert_condition_grain_is_unique.sql`
+asserts that `patient_id`, `encounter_id` and `condition_code` identify a row.
+It holds across all 38,094 rows.
+
+**Why.** Staging renames and casts and does nothing else, so a hashed key would
+be the first derived column in the layer and would set a precedent the other
+models do not follow. The grain still has to be guaranteed, because every
+downstream join depends on it, and a singular test guarantees it without
+inventing data. A surrogate key also needs a hashing macro, which means either
+a `dbt_utils` dependency and a `dbt deps` step in CI or a hand-rolled macro
+that has to be portable across warehouses.
+
+**What would reopen it.** A mart that needs a stable single-column key for the
+condition grain. The key belongs in that mart, where the hash function and the
+column order are visible next to the model that depends on them.
+
+## 11. Clinical reference profile
+
+**Recorded 2026-09-03**, from the nov2021 archive, to inform the dimensional
+models. Not a decision, but facts the next decisions rest on.
+
+- Every foreign key resolves. Encounters to patients, organizations, providers
+  and payers, conditions to patients and encounters, and providers to
+  organizations are all zero orphans, so the relationships tests are real
+  assertions rather than aspirations.
+- A SNOMED code does not determine its description. Six encounter codes and
+  two condition codes carry more than one spelling, including case variants:
+  `185347001` appears as `Encounter for problem`, `Encounter for problem
+  (procedure)` and `Encounter for Problem`. A code dimension has to be keyed on
+  the code alone and pick one label deliberately.
+- `encounters.PAYER_COVERAGE` is never greater than `TOTAL_CLAIM_COST`, and no
+  money column in encounters is negative.
+- `BASE_ENCOUNTER_COST` takes exactly two values, 129.16 and 77.49. It is a
+  Synthea constant, not a modelled price.
+- `REASONCODE` is null on 45,502 of 61,459 encounters, and `REASONDESCRIPTION`
+  is null on exactly the same rows.
+- Encounter class splits 24,038 wellness, 20,124 ambulatory, 10,837 outpatient,
+  2,564 urgent care, 2,168 emergency, 1,728 inpatient.
+- NO_INSURANCE is the payer on 13,620 of 61,459 encounters, more than any real
+  plan. Any payer mix that does not name it separately will mislead.
+- Organization and provider ZIPs arrive in three shapes: ZIP+4, five digits,
+  and four digits where a leading zero was dropped. Patient ZIPs are five
+  digits or null. All ZIPs stay text; normalizing is a mart decision.
+- `organizations.REVENUE` is 0.00 on every row and `STATE` is MA on every row
+  of both organizations and providers. Neither column carries information in
+  this sample.
+- `providers` addresses repeat the employing organization's address, so a
+  provider dimension adds nothing geographic that the organization does not
+  already have.

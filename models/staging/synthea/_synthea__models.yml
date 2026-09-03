@@ -1,6 +1,186 @@
 version: 2
 
 models:
+  - name: stg_synthea__conditions
+    description: >
+      One row per condition recorded for a patient at an encounter. Columns are
+      renamed to snake_case and cast to real types; nothing is filtered or
+      derived. The source file has no key column, so this model has none
+      either; tests/assert_condition_grain_is_unique.sql asserts that
+      patient_id, encounter_id and condition_code identify a row.
+      condition_code is SNOMED CT. One code can arrive with more than one
+      spelling of condition_description, so a code dimension has to be keyed on
+      the code alone and pick a label; that is a mart decision, not a staging
+      one.
+    columns:
+      - name: patient_id
+        description: Patient the condition belongs to.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__patients')
+                field: patient_id
+      - name: encounter_id
+        description: Encounter the condition was recorded at.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__encounters')
+                field: encounter_id
+      - name: started_date
+        description: Date the condition was recorded as beginning.
+        data_tests:
+          - not_null
+      - name: stopped_date
+        description: Date the condition was recorded as ending; null while it is still open.
+      - name: condition_code
+        description: SNOMED CT code for the condition.
+        data_tests:
+          - not_null
+      - name: condition_description
+        description: Text label for the SNOMED CT code as Synthea emitted it.
+        data_tests:
+          - not_null
+
+  - name: stg_synthea__encounters
+    description: >
+      One row per patient visit. Columns are renamed to snake_case and cast to
+      real types; nothing is filtered or derived. started_at and stopped_at are
+      UTC: the source is ISO 8601 with a Z suffix, cast to timestamp so the
+      build does not depend on the machine's time zone. Every encounter carries
+      an organization, a provider and a payer, and all four foreign keys
+      resolve. One encounter_code can arrive with more than one spelling of
+      encounter_description, so neither column is tested against a fixed list.
+    columns:
+      - name: encounter_id
+        description: Synthea encounter UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: patient_id
+        description: Patient seen at the encounter.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__patients')
+                field: patient_id
+      - name: organization_id
+        description: Organization where the encounter took place.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__organizations')
+                field: organization_id
+      - name: provider_id
+        description: Clinician who saw the patient.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__providers')
+                field: provider_id
+      - name: payer_id
+        description: >
+          Payer for the encounter. Resolves for every row, including the
+          NO_INSURANCE payer, which is Synthea's self-pay stand-in.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__payers')
+                field: payer_id
+      - name: started_at
+        description: Start of the encounter, UTC.
+        data_tests:
+          - not_null
+      - name: stopped_at
+        description: End of the encounter, UTC.
+        data_tests:
+          - not_null
+      - name: encounter_class
+        description: Setting of the encounter.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ambulatory', 'emergency', 'inpatient', 'outpatient', 'urgentcare', 'wellness']
+      - name: encounter_code
+        description: SNOMED CT code for the encounter type.
+        data_tests:
+          - not_null
+      - name: encounter_description
+        description: Text label for the encounter code as Synthea emitted it.
+        data_tests:
+          - not_null
+      - name: reason_code
+        description: SNOMED CT code for why the visit happened; null on 45,502 of 61,459 rows.
+      - name: reason_description
+        description: Text label for the reason code; null wherever reason_code is null.
+      - name: base_encounter_cost
+        description: Cost of the visit itself before any procedure, medication or supply is added.
+        data_tests:
+          - not_null
+      - name: total_claim_cost
+        description: Full billed cost of the encounter, rounded to cents.
+        data_tests:
+          - not_null
+      - name: payer_coverage
+        description: >
+          Portion of total_claim_cost the payer paid, rounded to cents. Zero
+          for self-pay encounters and never larger than total_claim_cost.
+        data_tests:
+          - not_null
+
+  - name: stg_synthea__organizations
+    description: >
+      One row per care organization. Columns are renamed to snake_case and cast
+      to real types; nothing is filtered or derived. Every organization in this
+      sample sits in Massachusetts, and revenue is 0.00 on every row, so
+      neither column carries information here.
+    columns:
+      - name: organization_id
+        description: Synthea organization UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: organization_name
+        description: Organization name. Not unique, since 1,127 organizations share 984 names.
+        data_tests:
+          - not_null
+      - name: street_address
+        description: Street address without commas or newlines.
+      - name: city
+        description: Address city.
+      - name: state
+        description: Address state. MA on every row of this sample.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['MA']
+      - name: zip_code
+        description: >
+          ZIP kept as text. It arrives in three shapes: ZIP+4 on 978 rows, five
+          digits on 106, and four digits on 43 where Synthea dropped a leading
+          zero. Normalizing is a mart decision, not a staging one.
+      - name: latitude
+        description: Address latitude.
+      - name: longitude
+        description: Address longitude.
+      - name: phone
+        description: Contact phone as free text; null on 153 rows.
+      - name: revenue
+        description: Lifetime revenue. 0.00 on every row of this sample.
+        data_tests:
+          - not_null
+      - name: utilization
+        description: Count of encounters Synthea attributed to the organization across the generated population.
+        data_tests:
+          - not_null
+
   - name: stg_synthea__patients
     description: >
       One row per synthetic patient from the Synthea sample. Columns are renamed
@@ -82,5 +262,150 @@ models:
           - not_null
       - name: healthcare_coverage
         description: Lifetime healthcare cost covered by payers, rounded to cents.
+        data_tests:
+          - not_null
+
+  - name: stg_synthea__payers
+    description: >
+      One row per insurance payer. Columns are renamed to snake_case and cast
+      to real types; nothing is filtered or derived. The sample carries ten
+      payers, eight commercial or public plans plus Dual Eligible and
+      NO_INSURANCE, Synthea's self-pay stand-in. The totals on this table are
+      Synthea's own rollups across the population it generated, not sums over
+      this sample's encounters, so nothing here reconciles to the fact tables.
+    columns:
+      - name: payer_id
+        description: Synthea payer UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: payer_name
+        description: Payer name.
+        data_tests:
+          - unique
+          - not_null
+      - name: street_address
+        description: Headquarters street address; null for NO_INSURANCE.
+      - name: city
+        description: Headquarters city; null for NO_INSURANCE.
+      - name: headquarters_state
+        description: State the payer is headquartered in; null for NO_INSURANCE.
+      - name: zip_code
+        description: >
+          Headquarters ZIP kept as text; null for NO_INSURANCE. Two of the nine
+          remaining rows are four digits where Synthea dropped a leading zero.
+      - name: phone
+        description: Contact phone as free text; null for NO_INSURANCE.
+      - name: amount_covered
+        description: Lifetime cost the payer covered, rounded to cents.
+        data_tests:
+          - not_null
+      - name: amount_uncovered
+        description: Lifetime cost the payer did not cover, rounded to cents.
+        data_tests:
+          - not_null
+      - name: revenue
+        description: Lifetime premium revenue, rounded to cents.
+        data_tests:
+          - not_null
+      - name: covered_encounters
+        description: Encounters the payer covered.
+        data_tests:
+          - not_null
+      - name: uncovered_encounters
+        description: Encounters the payer did not cover.
+        data_tests:
+          - not_null
+      - name: covered_medications
+        description: Medications the payer covered.
+        data_tests:
+          - not_null
+      - name: uncovered_medications
+        description: Medications the payer did not cover.
+        data_tests:
+          - not_null
+      - name: covered_procedures
+        description: Procedures the payer covered.
+        data_tests:
+          - not_null
+      - name: uncovered_procedures
+        description: Procedures the payer did not cover.
+        data_tests:
+          - not_null
+      - name: covered_immunizations
+        description: Immunizations the payer covered.
+        data_tests:
+          - not_null
+      - name: uncovered_immunizations
+        description: Immunizations the payer did not cover.
+        data_tests:
+          - not_null
+      - name: unique_customers
+        description: Distinct members the payer served.
+        data_tests:
+          - not_null
+      - name: member_months
+        description: Total months of membership across the payer's members.
+        data_tests:
+          - not_null
+      - name: quality_of_life_score_avg
+        description: Average quality of life score across the payer's members, as Synthea computed it.
+        data_tests:
+          - not_null
+
+  - name: stg_synthea__providers
+    description: >
+      One row per clinician. Columns are renamed to snake_case and cast to real
+      types; nothing is filtered or derived. The source column SPECIALITY is
+      renamed to specialty. Address columns repeat the employing organization's
+      address rather than a clinician's own, so they carry no information the
+      organization does not already have.
+    columns:
+      - name: provider_id
+        description: Synthea provider UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: organization_id
+        description: Organization that employs the clinician.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_synthea__organizations')
+                field: organization_id
+      - name: provider_name
+        description: Clinician name. Not unique, since 5,056 clinicians share 3,735 names.
+        data_tests:
+          - not_null
+      - name: gender
+        description: M or F.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['M', 'F']
+      - name: specialty
+        description: Clinical specialty as free text, 63 distinct values in this sample.
+        data_tests:
+          - not_null
+      - name: street_address
+        description: Street address of the employing organization.
+      - name: city
+        description: Address city.
+      - name: state
+        description: Address state. MA on every row of this sample.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['MA']
+      - name: zip_code
+        description: ZIP kept as text, in the same three shapes as the organization ZIP.
+      - name: latitude
+        description: Address latitude.
+      - name: longitude
+        description: Address longitude.
+      - name: utilization
+        description: Count of encounters Synthea attributed to the clinician across the generated population.
         data_tests:
           - not_null

@@ -11,11 +11,62 @@ sources:
     meta:
       external_location: "read_csv('data/raw/synthea/{name}.csv', header=true, all_varchar=true)"
     tables:
+      - name: conditions
+        description: >
+          One row per condition recorded for a patient at an encounter. The
+          file carries no key column; PATIENT, ENCOUNTER and CODE together
+          identify a row.
+        columns:
+          - name: PATIENT
+            description: Patient UUID.
+            data_tests:
+              - not_null
+          - name: ENCOUNTER
+            description: Encounter UUID the condition was recorded at.
+            data_tests:
+              - not_null
+
+      - name: encounters
+        description: One row per patient visit, with its class, cost, and the organization, provider and payer involved.
+        columns:
+          - name: Id
+            description: Encounter UUID, primary key.
+            data_tests:
+              - unique
+              - not_null
+
+      - name: organizations
+        description: One row per care organization, with address and lifetime utilization.
+        columns:
+          - name: Id
+            description: Organization UUID, primary key.
+            data_tests:
+              - unique
+              - not_null
+
       - name: patients
         description: One row per synthetic patient with demographics, address, and lifetime cost totals.
         columns:
           - name: Id
             description: Patient UUID, primary key.
+            data_tests:
+              - unique
+              - not_null
+
+      - name: payers
+        description: One row per insurance payer, with headquarters address and lifetime coverage totals.
+        columns:
+          - name: Id
+            description: Payer UUID, primary key.
+            data_tests:
+              - unique
+              - not_null
+
+      - name: providers
+        description: One row per clinician, each attached to one organization.
+        columns:
+          - name: Id
+            description: Provider UUID, primary key.
             data_tests:
               - unique
               - not_null
