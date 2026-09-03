@@ -1,0 +1,82 @@
+# Builds the project the same way the README tells a reader to build it:
+# fetch the Synthea CSVs, then run dbt build. On a push to main it also
+# generates the dbt docs and publishes them to GitHub Pages.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# profiles.yml is repo-local, and dbt only finds it when launched from the
+# directory that holds it. Setting this makes the invocation work from
+# anywhere in the job.
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+
+      # The fetch script pins the archive URL and its SHA-256, so hashing the
+      # script is enough to invalidate this cache when the dataset changes.
+      - name: Restore the Synthea CSVs
+        uses: actions/cache@v4
+        with:
+          path: data/raw/synthea
+          key: synthea-${{ hashFiles('scripts/fetch_synthea.py') }}
+
+      - name: Fetch the Synthea CSVs
+        run: python scripts/fetch_synthea.py
+
+      # One warning is expected and correct, the post-death encounter test in
+      # docs/DECISIONS.md section 15. dbt exits 0 on a warning and non-zero on
+      # an error, so a real regression fails this step.
+      - name: Build and test
+        run: dbt build --no-partial-parse
+
+      - name: Generate the docs site
+        if: github.event_name == 'push'
+        run: |
+          dbt docs generate --static --no-partial-parse
+          mkdir -p docs-site
+          cp target/static_index.html docs-site/index.html
+
+      - name: Upload the docs site
+        if: github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site
+
+  publish-docs:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
