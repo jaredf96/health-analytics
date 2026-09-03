@@ -327,3 +327,39 @@ its documentation now say plainly that the fact cannot use it.
 
 **What would reopen it.** A dataset whose encounters reference more than one
 specialty. This is a property of the Synthea sample, not of the modelling.
+
+## 17. The star schema came before the rest of the feeds
+
+**Decided 2026-09-03, confirmed by a second-model review.** With the clinical
+core of staging green, the next work was the dimensional layer plus the things
+that ship it: the test suite, the generated docs, and CI. Six more staging
+models over claims, claims transactions, medications, procedures, observations
+and immunizations were deliberately not built first.
+
+**Why.** The unit that demonstrates an analytics project is a working vertical
+slice, not a count of staged feeds. Encounters already carry
+`total_claim_cost` and `payer_coverage`, so one fact covers the clinical and
+the financial angle without touching the claims files, and the claims
+reconciliation problem in section 8 stays out of the first model layer instead
+of being its opening move. Models that nothing publishes are also models that
+nothing proves, so the docs site and CI landed in the same step rather than
+two steps later.
+
+**Against.** Staging everything first gives a fuller lineage graph and a richer
+fact when the marts do arrive. It also materializes a 711,238-row and a
+531,144-row table that nothing reads yet, and it delays the layer that the
+whole project exists to show.
+
+**What would reopen it.** It is already reopened, in the ordinary way: the
+financial feeds and a second fact at the condition grain are the next
+candidates. This entry records why they were not first, not that they are
+unwelcome.
+
+**A related decision, same day.** The cloud warehouse target stays out of this
+release for a sharper reason than section 1 gives. Sources here are CSV files
+read in place, so there is no load step, and no cloud warehouse can execute
+that source layer as written. A real Snowflake target means designing an
+ingestion step and reopening section 4, not adding a second block to
+`profiles.yml`. Configuration alone would demonstrate syntax rather than a
+warehouse the repo has built on, which is exactly what the README refuses to
+claim.
