@@ -20,7 +20,11 @@ cleaned as (
         latitude,
         longitude,
         phone,
-        utilization                                             as lifetime_encounter_count
+        -- Synthea's own UTILIZATION figure, kept because it describes the
+        -- directory faithfully. It counts every claim-bearing contact and
+        -- disagrees with a count of fct_encounter rows on 1,020 of 1,122
+        -- organizations, by up to 28 times, so it is named as what it is.
+        utilization                                             as source_reported_utilization
     from organizations
 
 )

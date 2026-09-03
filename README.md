@@ -39,9 +39,7 @@ To read the generated documentation locally:
 .venv/bin/dbt docs generate && .venv/bin/dbt docs serve
 ```
 
-CI publishes that same site to GitHub Pages on every push to `main`. The
-publishing job is gated on the repository being public, because Pages is not
-available on a private repository on the Free plan.
+CI publishes that same site to GitHub Pages on every push to `main`.
 
 ## What the build produces
 
@@ -83,14 +81,18 @@ The dimensions resolve real problems in the feed rather than renaming columns:
   rebuild produces the same numbers on any machine on any day.
 
 Money reconciles exactly between the fact and its staging model: 255,033,828.08
-billed, 63,530,758.42 covered by payers, 191,503,069.66 left with patients.
+billed, 63,530,758.42 covered by payers, 191,503,069.66 not covered by a
+payer. That residual is `uncovered_amount` rather than patient responsibility:
+in a real revenue cycle most of it is the contractual adjustment between
+charges and the negotiated rate, and Synthea carries neither adjustments nor
+allowed amounts, so the two cannot be separated here.
 Payer mix by encounter is 33,231 commercial, 14,608 public, 13,620 self pay.
 
 ## Data quality
 
-180 tests: 170 generic and 10 singular.
+180 tests: 169 generic and 11 singular.
 
-The generic tests are 122 `not_null`, 20 `unique`, 14 `relationships` and 14
+The generic tests are 121 `not_null`, 20 `unique`, 14 `relationships` and 14
 `accepted_values`. The relationships tests are real assertions rather than
 aspirations: every foreign key in the project resolves with zero orphans, from
 encounters to patients, organizations, providers and payers, from conditions
@@ -99,9 +101,11 @@ to each of its six dimensions.
 
 The singular tests carry the assertions no generic test covers. Encounter and
 condition periods do not end before they start. A payer never covers more than
-the encounter was billed. Patient responsibility is never negative. An
+the encounter was billed, so the uncovered residual is never negative. An
 encounter reason arrives as a code and a label together or not at all. The
-conditions feed has no key column, so a test asserts its grain instead.
+conditions feed has no key column, so a test asserts its grain instead. And
+no combination of columns in the marts recovers an age Safe Harbor hides,
+which is asserted against the data rather than against the column names.
 
 **One test warns, on purpose.** 165 of 61,459 encounters start after the
 patient's recorded death date, one to fourteen days after, across 154
@@ -116,15 +120,33 @@ failure the moment it grows. See `docs/DECISIONS.md` section 15.
 
 `dim_patient` is de-identified to the HIPAA Safe Harbor standard. Names,
 street address, city, county, coordinates and full dates stay in staging and
-never reach the mart. Dates become years, ZIP becomes its first three digits
-with the seventeen prefixes HHS restricts replaced by `000`, and any age over
-89 is reported as 90. `fct_encounter.patient_age_years` is capped the same
-way, so the fact cannot be used to recover an age the dimension hides.
+never reach it. Dates become years, and ZIP becomes its first three digits
+with the seventeen prefixes HHS restricts replaced by `000`.
+
+Ages over 89 are the part worth reading closely, because capping the age
+column is not enough on its own. Safe Harbor aggregates everyone over 89 into
+one category and removes the date elements, the year included, that would
+reveal such an age. So `dim_patient` withholds `birth_year` and `death_year`
+for those 35 patients rather than publishing them beside a capped age: keeping
+the years would let one subtraction undo the cap, and joining a birth year to
+a date on the fact would undo it for every encounter of that patient.
+`fct_encounter.patient_age_years` is capped at 90 to match.
+
+The claim is scoped to that one model. `fct_encounter` deliberately keeps
+exact service timestamps, because a fact that cannot say when something
+happened is not much of a fact. The marts layer as a whole is therefore not a
+Safe Harbor data set, and only `dim_patient` claims to be.
 
 The data is synthetic, so this protects nobody. That is the point: the rule is
-the deliverable. `tests/assert_patient_dimension_excludes_direct_identifiers.sql`
-reads `information_schema` and fails the build if a forbidden column
-reappears, so the policy is enforced by CI rather than by trust.
+the deliverable. Two tests enforce it, and the distinction between them is
+the lesson.
+`tests/assert_patient_dimension_excludes_direct_identifiers.sql` reads
+`information_schema` and fails if a forbidden column reappears, but it only
+knows column names. It could not see the age leak above, because `birth_year`
+was never on its list.
+`tests/assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data
+instead and asserts that no combination of columns recovers an age the rule
+hides. A control that checks names is not a control that checks the rule.
 
 Staging keeps the full record. Anything that genuinely needs a patient's exact
 date of birth joins the staging model and inherits the responsibility for

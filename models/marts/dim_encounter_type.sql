@@ -44,6 +44,6 @@ select
     encounter_code,
     encounter_description,
     spelling_count          as source_spelling_count,
-    total_encounter_count   as lifetime_encounter_count
+    total_encounter_count   as encounter_count
 from ranked
 where spelling_rank = 1

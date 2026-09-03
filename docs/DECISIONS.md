@@ -34,7 +34,7 @@ the same variable. A cloud target will read its credentials through
 
 ## 3. Dataset: the Synthea nov2021 sample
 
-**Decided 2026-09-02, confirmed by a second-model review.** The source data is
+**Decided 2026-09-02.** The source data is
 `synthea_sample_data_csv_nov2021.zip` from MITRE's Synthea sample-data site,
 pinned by URL and SHA-256 in `scripts/fetch_synthea.py`.
 
@@ -90,7 +90,7 @@ which DuckDB rounds to cents.
 
 ## 5. Staging materialized as tables, not views
 
-**Decided 2026-09-02, confirmed by a second-model review.** The `staging`
+**Decided 2026-09-02.** The `staging`
 folder is configured `+materialized: table`.
 
 **Why.** dbt convention makes staging views because in a warehouse they sit on
@@ -225,10 +225,15 @@ models. Not a decision, but facts the next decisions rest on.
 
 **Decided 2026-09-03**, settling the question section 6 deferred. `dim_patient`
 carries no name, no street address, no city or county, no coordinates and no
-full dates. Dates are reduced to the year, ZIP to its first three digits with
-the seventeen prefixes HHS restricts replaced by `000`, and any age over 89 is
-reported as 90. `fct_encounter.patient_age_years` is capped at 90 too, so the
-fact cannot be used to recover what the dimension hides.
+full dates. Dates are reduced to the year and ZIP to its first three digits
+with the seventeen prefixes HHS restricts replaced by `000`. Ages over 89 are
+aggregated into a single category and the year elements that would reveal such
+an age are withheld with them; section 19 records why capping the age column
+alone was not enough, and what it took to find that out.
+
+**Scope.** The rule is applied to `dim_patient` and claimed for `dim_patient`.
+`fct_encounter` keeps exact service timestamps on purpose, so the marts layer
+as a whole is not a Safe Harbor data set. Section 19 covers that too.
 
 **Why.** The data is synthetic, so this protects nobody. That is the point: the
 rule is the deliverable. A staging layer that holds the full record and a mart
@@ -333,7 +338,7 @@ specialty. This is a property of the Synthea sample, not of the modeling.
 
 ## 17. The star schema came before the rest of the feeds
 
-**Decided 2026-09-03, confirmed by a second-model review.** With the clinical
+**Decided 2026-09-03.** With the clinical
 core of staging green, the next work was the dimensional layer plus the things
 that ship it: the test suite, the generated docs, and CI. Six more staging
 models over claims, claims transactions, medications, procedures, observations
@@ -400,3 +405,85 @@ patients either way, and section 12 is unaffected.
 **What would reopen it.** A warehouse whose `date_diff` already means completed
 years. The macro would then be a wrapper over the native function rather than a
 correction to it.
+
+## 19. Safe Harbor removes the year elements, not just the age
+
+**Decided 2026-09-03**, after an audit read the built marts the way a hospital
+privacy analyst would rather than the way the author had.
+
+`dim_patient` capped age at 90 and published `birth_year` and `death_year`
+beside it. One subtraction undid the cap: 15 deceased patients resolved to
+ages between 91 and 104, and `is_age_at_death_90_or_older` named exactly which
+rows to try it on. A join from `fct_encounter` to `dim_patient.birth_year`
+recovered ages up to 110 across the 1,901 encounters whose `patient_age_years`
+read 90. Twenty living patients leaked the same way, because the old flag only
+considered age at death and a patient with a 1917 birth year and encounters in
+2021 is over 89 without having died.
+
+45 CFR 164.514(b)(2)(i)(C) removes ages over 89 together with the elements of
+dates, the year included, that are indicative of such an age, and allows them
+to be aggregated into a single category instead. The cap was the aggregation;
+the removal was missing.
+
+**What changed.** `dim_patient` now computes the greatest age the data reveals
+about a patient, at death if they died and at their last encounter otherwise,
+and withholds `birth_year` and `death_year` for the 35 patients over 89.
+`is_age_at_death_90_or_older` became `is_age_90_or_older`, because the old
+name described a narrower question than the rule asks.
+
+**Why the existing test did not catch it.**
+`assert_patient_dimension_excludes_direct_identifiers.sql` reads
+`information_schema` and compares column names against a list. `birth_year`
+was not on the list and never would have been, because the column is permitted
+and it was the combination that was not. A control that reads names cannot
+assert a rule about values.
+`assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data and asserts
+the closure directly, including the join back from the fact.
+
+**Against.** Two dimension columns are now null for 35 patients, and any
+analysis of the oldest cohort loses its birth year. That is what the rule
+costs, and it is the rule's intent rather than a side effect.
+
+**Consequence, and the honest version of the claim.** `fct_encounter` still
+carries `started_at` and `stopped_at` at second precision, which Safe Harbor
+would not permit for dates directly related to an individual. Stripping them
+would leave a fact that cannot say when anything happened. So the fact keeps
+them and the claim is scoped: `dim_patient` is a Safe Harbor data set, the
+marts layer is not, and the README, the model description and this log all now
+say so. The previous wording, that full dates never reach the mart, was not
+true of the layer.
+
+**What would reopen it.** A requirement that the whole layer be releasable
+under Safe Harbor. The path then is a separate, date-shifted fact, not
+loosening this dimension.
+
+## 20. Columns are named for what they measure
+
+**Decided 2026-09-03**, from the same audit. Four names promised something the
+values did not deliver.
+
+- `patient_responsibility` was `total_claim_cost - payer_coverage` on every one
+  of the 61,459 rows. In a real revenue cycle that residual is dominated by the
+  contractual adjustment between charges and the negotiated rate, not by what a
+  patient owes, and Synthea carries neither adjustments nor allowed amounts, so
+  the two cannot be separated. It is `uncovered_amount` now, and the README no
+  longer describes 191.5 million as money left with patients.
+- `dim_organization.lifetime_encounter_count` and the provider equivalent are
+  Synthea's own `UTILIZATION` figure, which counts every claim-bearing contact.
+  They disagree with a count of `fct_encounter` rows on 1,020 of 1,122
+  organizations and 1,021 of 1,123 providers, by as much as 28 times. Two
+  columns in one star giving different answers to the same question is worse
+  than either answer alone, so they carry the source's name now:
+  `source_reported_utilization`.
+- `dim_encounter_type.lifetime_encounter_count` was the opposite case. It is
+  derived from the same feed as the fact and agrees with it on all 50 codes, so
+  only the misleading `lifetime` prefix went and it is `encounter_count`.
+- `dim_date` exposed `iso_week` with no ISO year. 2019-12-30 and 2020-01-01 are
+  both ISO week 1 of 2020, so any weekly report grouping on `iso_week` and
+  `calendar_year` split that week in two. `iso_year` and `iso_year_week` are
+  there now.
+
+**Why it is one entry.** These are the same mistake four times: a name that
+describes what the author expected rather than what the query returns. The fix
+is the same each time, and it is cheaper than the alternative, which is a
+reader trusting the name.

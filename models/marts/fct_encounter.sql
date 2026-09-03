@@ -3,7 +3,7 @@
 -- tests/assert_encounter_fact_matches_staging_grain.sql asserts.
 --
 -- Measures added here rather than in staging, where derived columns are not
--- allowed: patient_responsibility, duration_minutes, patient_age_years, and
+-- allowed: uncovered_amount, duration_minutes, patient_age_years, and
 -- condition_count. patient_age_years is capped at 90 to match the Safe Harbor
 -- rule dim_patient applies, so the fact cannot be used to recover an age the
 -- dimension deliberately hides.
@@ -68,7 +68,10 @@ joined as (
         e.base_encounter_cost,
         e.total_claim_cost,
         e.payer_coverage,
-        e.total_claim_cost - e.payer_coverage                           as patient_responsibility
+        -- Billed minus what the payer covered. In a real revenue cycle
+        -- this residual is dominated by contractual adjustments rather
+        -- than by patient liability, so it is named for what it measures.
+        e.total_claim_cost - e.payer_coverage                           as uncovered_amount
 
     from encounters e
     inner join patients p

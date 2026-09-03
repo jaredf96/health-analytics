@@ -32,7 +32,11 @@ dated as (
         day(calendar_date)                                 as day_of_month,
         isodow(calendar_date)                              as day_of_week,
         dayname(calendar_date)                             as day_name,
+        isoyear(calendar_date)                             as iso_year,
         week(calendar_date)                                as iso_week,
+        -- The ISO year and week together. An iso_week on its own collides
+        -- across years: 2019-12-30 and 2020-01-01 are both week 1.
+        isoyear(calendar_date) * 100 + week(calendar_date) as iso_year_week,
         isodow(calendar_date) >= 6                         as is_weekend
     from spine
 

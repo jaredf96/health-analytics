@@ -23,7 +23,10 @@ shaped as (
         provider_name,
         gender,
         specialty,
-        utilization as lifetime_encounter_count
+        -- Synthea's own UTILIZATION figure. As on dim_organization it does
+        -- not equal a count of fct_encounter rows: it disagrees on 1,021
+        -- of 1,123 providers, so it keeps the source's name.
+        utilization as source_reported_utilization
     from providers
 
 )

@@ -56,6 +56,15 @@ models:
         description: Full day name in English.
         data_tests:
           - not_null
+      - name: iso_year
+        description: >
+          ISO 8601 week-numbering year. It differs from calendar_year at every
+          year boundary, which is why iso_week must never be grouped without
+          it.
+      - name: iso_year_week
+        description: >
+          iso_year and iso_week as one integer, YYYYWW. The key to group a
+          weekly report on.
       - name: iso_week
         description: ISO week number.
         data_tests:
@@ -88,8 +97,11 @@ models:
         description: How many distinct descriptions the feed carries for this code. Greater than 1 means a spelling was chosen.
         data_tests:
           - not_null
-      - name: lifetime_encounter_count
-        description: Encounters in this sample carrying the code, across every spelling.
+      - name: encounter_count
+        description: >
+          Encounters in this sample carrying the code, across every spelling.
+          Derived from the same feed as the fact, so it agrees with a count of
+          fct_encounter rows on all 50 codes.
         data_tests:
           - not_null
 
@@ -124,8 +136,13 @@ models:
         description: Address longitude.
       - name: phone
         description: Contact phone as free text.
-      - name: lifetime_encounter_count
-        description: Encounters Synthea attributed to the organization across the population it generated.
+      - name: source_reported_utilization
+        description: >
+          Synthea's own UTILIZATION figure for the organization. It is not a
+          count of fct_encounter rows and does not agree with one: it differs
+          on 1,020 of the 1,122 organizations the fact references, by up to 28
+          times, because it counts every claim-bearing contact. Kept under the
+          source's own name so nothing reads it as a fact rollup.
         data_tests:
           - not_null
 
@@ -133,13 +150,18 @@ models:
     description: >
       One row per patient, de-identified to the HIPAA Safe Harbor standard.
       Names, street address, city, county, coordinates and full dates stay in
-      staging and never reach this layer. Dates are reduced to the year, ZIP to
+      staging and never reach this model. Dates are reduced to the year, ZIP to
       its first three digits with the seventeen low-population prefixes zeroed,
-      and any age over 89 is reported as 90. The data is synthetic, so nothing
-      here protects a real person; the point is that the rule is written down,
-      applied in one place, and enforced by
-      tests/assert_patient_dimension_excludes_direct_identifiers.sql rather
-      than by trust. docs/DECISIONS.md section 12 records the trade.
+      and everyone over 89 is aggregated into a single category with the year
+      elements that would reveal the age removed with them. The rule is scoped
+      to this model: fct_encounter deliberately keeps exact service timestamps,
+      so the marts layer as a whole is not a Safe Harbor data set and only this
+      dimension claims to be. The data is synthetic, so nothing here protects a
+      real person; the point is that the rule is written down, applied in one
+      place, and enforced by two tests rather than by trust.
+      assert_patient_dimension_excludes_direct_identifiers.sql guards the
+      column list and assert_safe_harbor_age_over_89_is_suppressed.sql checks
+      the data. docs/DECISIONS.md sections 12 and 19 record the trade.
     columns:
       - name: patient_id
         description: Synthea patient UUID. Primary key. Synthetic and internal to this dataset, not a real-world identifier.
@@ -147,21 +169,29 @@ models:
           - unique
           - not_null
       - name: birth_year
-        description: Year of birth. The full date is deliberately absent.
-        data_tests:
-          - not_null
+        description: >
+          Year of birth. The full date is deliberately absent, and the year
+          itself is null for the 35 patients in the 90-or-older category,
+          because a year that reveals an age over 89 is one of the elements
+          Safe Harbor removes.
       - name: death_year
-        description: Year of death; null while the patient is alive.
+        description: >
+          Year of death, null while the patient is alive and also null for the
+          90-or-older category, for the same reason as birth_year.
       - name: is_deceased
         description: True when the feed carries a death date.
         data_tests:
           - not_null
-      - name: age_at_death_years
-        description: Completed years between birth and death, capped at 90; null while the patient is alive.
-      - name: is_age_at_death_90_or_older
-        description: True when the capped age_at_death_years hides a real age above 89.
+      - name: is_age_90_or_older
+        description: >
+          True when the greatest age this data reveals about the patient is
+          over 89, whether at death or at their last encounter. This is the
+          single aggregated category Safe Harbor permits, and it replaces the
+          year elements rather than sitting beside them.
         data_tests:
           - not_null
+      - name: age_at_death_years
+        description: Completed years between birth and death, capped at 90; null while the patient is alive.
       - name: gender
         description: M or F.
         data_tests:
@@ -306,8 +336,11 @@ models:
           the model.
         data_tests:
           - not_null
-      - name: lifetime_encounter_count
-        description: Encounters Synthea attributed to the clinician across the population it generated.
+      - name: source_reported_utilization
+        description: >
+          Synthea's own UTILIZATION figure for the clinician. As on
+          dim_organization it is not a count of fct_encounter rows: it differs
+          on 1,021 of the 1,123 providers the fact references.
         data_tests:
           - not_null
 
@@ -317,11 +350,14 @@ models:
       stg_synthea__encounters. Nothing is filtered;
       tests/assert_encounter_fact_matches_staging_grain.sql asserts it. Every
       foreign key resolves to its dimension. The measures added here are the
-      ones staging is not allowed to derive: patient_responsibility,
+      ones staging is not allowed to derive: uncovered_amount,
       duration_minutes, patient_age_years and condition_count.
-      patient_age_years is capped at 90 to match the Safe Harbor rule
-      dim_patient applies, so the fact cannot be used to recover an age the
-      dimension hides.
+      patient_age_years is capped at 90 to match the category dim_patient
+      aggregates into, and dim_patient withholds the birth year for that
+      cohort, so joining the two back together cannot recover an age either
+      one hides. The fact does keep exact service timestamps, which the
+      Safe Harbor rule on dim_patient does not extend to; docs/DECISIONS.md
+      section 19 says why and what it means.
     columns:
       - name: encounter_id
         description: Synthea encounter UUID. Degenerate primary key.
@@ -425,9 +461,13 @@ models:
         description: Portion of total_claim_cost the payer paid.
         data_tests:
           - not_null
-      - name: patient_responsibility
+      - name: uncovered_amount
         description: >
           total_claim_cost less payer_coverage. Never negative, which
-          tests/assert_patient_responsibility_not_negative.sql asserts.
+          tests/assert_uncovered_amount_not_negative.sql asserts. This is the
+          residual the payer did not cover, not a patient's bill: in a real
+          revenue cycle most of it is the contractual adjustment between
+          charges and the negotiated rate. Synthea carries no adjustments or
+          allowed amounts, so the two cannot be separated here.
         data_tests:
           - not_null
