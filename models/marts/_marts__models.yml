@@ -296,7 +296,14 @@ models:
               arguments:
                 values: ['M', 'F']
       - name: specialty
-        description: Clinical specialty as free text, 63 distinct values in this sample.
+        description: >
+          Clinical specialty as free text, 63 distinct values. Only one of them
+          reaches the fact. Synthea assigns every encounter to a GENERAL
+          PRACTICE clinician, so 1,123 of the 5,056 providers here carry an
+          encounter and the other 62 specialties appear in the directory and
+          nowhere else. Grouping encounters by specialty in this sample
+          returns a single row, which is a property of the generator, not of
+          the model.
         data_tests:
           - not_null
       - name: lifetime_encounter_count

@@ -306,3 +306,24 @@ errors as failure, so a genuine regression still breaks the build.
 **What would reopen it.** A mart whose question the defect actually distorts,
 such as a mortality or end-of-life measure. That mart excludes the rows itself
 and says so, rather than the fact excluding them for everybody.
+
+## 16. Provider specialty does not reach the fact
+
+**Recorded 2026-09-03**, found by querying the built star schema rather than by
+profiling the CSVs, which is why it is here and not in section 11.
+
+`encounters.PROVIDER` only ever names a GENERAL PRACTICE clinician. Of the
+5,056 rows in `dim_provider`, 1,123 are referenced by `fct_encounter`, and of
+the 63 specialties, exactly one is. The other 62 exist in the provider
+directory and nowhere else. Organizations do not have this problem: 1,122 of
+1,127 are referenced.
+
+**Why it matters.** Grouping encounters by specialty returns a single row. Any
+operational mart built on specialty mix, referral patterns, or care-team
+composition would be measuring the generator rather than the data, and would
+look broken to a reader who did not know. The provider dimension keeps the
+column because it describes the directory faithfully, and both the model and
+its documentation now say plainly that the fact cannot use it.
+
+**What would reopen it.** A dataset whose encounters reference more than one
+specialty. This is a property of the Synthea sample, not of the modelling.

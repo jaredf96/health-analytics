@@ -2,6 +2,12 @@
 -- organization's address rather than a clinician's own, so they are dropped
 -- here: geography belongs to dim_organization, and duplicating it would invite
 -- two answers to the same question. Join through organization_id.
+--
+-- Note before building anything on specialty: Synthea assigns every encounter
+-- to a GENERAL PRACTICE clinician, so only 1,123 of these 5,056 rows are ever
+-- referenced by the fact and only one of the 63 specialties is. The column is
+-- kept because it describes the directory faithfully, not because encounter
+-- analysis can use it.
 
 with providers as (
 
