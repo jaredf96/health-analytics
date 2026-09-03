@@ -66,9 +66,13 @@ jobs:
         with:
           path: docs-site
 
+  # Gated on the repository being public, because GitHub Pages is not
+  # available on a private repository on the Free plan and deploy-pages would
+  # fail the run for a reason that is not a defect. Making the repository
+  # public turns this job on with no edit here.
   publish-docs:
     needs: build
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       pages: write

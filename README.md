@@ -31,7 +31,10 @@ To read the generated documentation locally:
 .venv/bin/dbt docs generate && .venv/bin/dbt docs serve
 ```
 
-CI publishes the same site to GitHub Pages on every push to `main`.
+CI publishes the same site to GitHub Pages on every push to `main`,
+once the repository is public. Pages is not available on a private
+repository on the Free plan, so the publishing job is gated on that and
+turns itself on when the repository is made public.
 
 ## What the build produces
 
