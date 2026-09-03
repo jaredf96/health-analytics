@@ -9,6 +9,10 @@ The data is [Synthea](https://synthetichealth.github.io/synthea/), MITRE's
 synthetic patient generator. It is entirely artificial. There is no PHI here
 and no real person is represented.
 
+The generated documentation, model lineage and test coverage included, is
+published from this repository on every push to `main`:
+**https://jaredf96.github.io/health-analytics/**
+
 Every number below comes out of a `dbt build` of this repository. If a number
 here and the build ever disagree, the build is right and this file is a bug.
 
@@ -35,11 +39,9 @@ To read the generated documentation locally:
 .venv/bin/dbt docs generate && .venv/bin/dbt docs serve
 ```
 
-CI publishes the same site to GitHub Pages on every push to `main`, once
-the repository is public. Pages is not available on a private repository on
-the Free plan, so the publishing job is gated on the repository being public
-and skips itself until then. The gate needs no edit, but Pages does have to
-be enabled once in Settings with its source set to GitHub Actions.
+CI publishes that same site to GitHub Pages on every push to `main`. The
+publishing job is gated on the repository being public, because Pages is not
+available on a private repository on the Free plan.
 
 ## What the build produces
 
