@@ -1,0 +1,426 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: >
+      Date dimension, one row per calendar day from the first encounter in the
+      sample to the last. The spine is anchored to the encounter data rather
+      than to the clock, so a rebuild produces the same rows on any machine on
+      any day. Nothing in this project reads current_date.
+    columns:
+      - name: date_id
+        description: Date as an integer in YYYYMMDD form. Primary key, and the foreign key every fact uses.
+        data_tests:
+          - unique
+          - not_null
+      - name: calendar_date
+        description: The day itself.
+        data_tests:
+          - unique
+          - not_null
+      - name: calendar_year
+        description: Four-digit year.
+        data_tests:
+          - not_null
+      - name: calendar_quarter
+        description: Quarter of the year, 1 through 4.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+      - name: calendar_month
+        description: Month of the year, 1 through 12.
+        data_tests:
+          - not_null
+      - name: month_name
+        description: Full month name in English.
+        data_tests:
+          - not_null
+      - name: year_month
+        description: Year and month as YYYY-MM, for grouping without a date cast.
+        data_tests:
+          - not_null
+      - name: day_of_month
+        description: Day of the month, 1 through 31.
+        data_tests:
+          - not_null
+      - name: day_of_week
+        description: ISO day of week, 1 for Monday through 7 for Sunday.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7]
+      - name: day_name
+        description: Full day name in English.
+        data_tests:
+          - not_null
+      - name: iso_week
+        description: ISO week number.
+        data_tests:
+          - not_null
+      - name: is_weekend
+        description: True on Saturday and Sunday.
+        data_tests:
+          - not_null
+
+  - name: dim_encounter_type
+    description: >
+      One row per SNOMED CT encounter code, with a single chosen description.
+      The feed does not give one description per code; six codes carry more
+      than one spelling, including case variants of the same words. The rule
+      here picks the spelling used on the most encounters and breaks ties on
+      the description text, so the result does not depend on row order. Class
+      is not an attribute of the code, because five codes appear in more than
+      one encounter class, so class lives on the fact instead.
+    columns:
+      - name: encounter_code
+        description: SNOMED CT code for the encounter type. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: encounter_description
+        description: The chosen description for the code, one of the spellings that appears in the feed.
+        data_tests:
+          - not_null
+      - name: source_spelling_count
+        description: How many distinct descriptions the feed carries for this code. Greater than 1 means a spelling was chosen.
+        data_tests:
+          - not_null
+      - name: lifetime_encounter_count
+        description: Encounters in this sample carrying the code, across every spelling.
+        data_tests:
+          - not_null
+
+  - name: dim_organization
+    description: >
+      One row per care organization. Safe Harbor governs patient data, not a
+      directory of care organizations, so the full address stays here while
+      dim_patient keeps only a state and a three-digit ZIP prefix. The only
+      rule applied collapses the runs of whitespace Synthea leaves inside
+      organization names.
+    columns:
+      - name: organization_id
+        description: Synthea organization UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: organization_name
+        description: Organization name with internal whitespace collapsed to single spaces. Not unique.
+        data_tests:
+          - not_null
+      - name: street_address
+        description: Street address.
+      - name: city
+        description: Address city.
+      - name: state
+        description: Address state. MA on every row of this sample.
+      - name: zip_code
+        description: ZIP as text, in the three shapes the feed carries.
+      - name: latitude
+        description: Address latitude.
+      - name: longitude
+        description: Address longitude.
+      - name: phone
+        description: Contact phone as free text.
+      - name: lifetime_encounter_count
+        description: Encounters Synthea attributed to the organization across the population it generated.
+        data_tests:
+          - not_null
+
+  - name: dim_patient
+    description: >
+      One row per patient, de-identified to the HIPAA Safe Harbor standard.
+      Names, street address, city, county, coordinates and full dates stay in
+      staging and never reach this layer. Dates are reduced to the year, ZIP to
+      its first three digits with the seventeen low-population prefixes zeroed,
+      and any age over 89 is reported as 90. The data is synthetic, so nothing
+      here protects a real person; the point is that the rule is written down,
+      applied in one place, and enforced by
+      tests/assert_patient_dimension_excludes_direct_identifiers.sql rather
+      than by trust. docs/DECISIONS.md section 12 records the trade.
+    columns:
+      - name: patient_id
+        description: Synthea patient UUID. Primary key. Synthetic and internal to this dataset, not a real-world identifier.
+        data_tests:
+          - unique
+          - not_null
+      - name: birth_year
+        description: Year of birth. The full date is deliberately absent.
+        data_tests:
+          - not_null
+      - name: death_year
+        description: Year of death; null while the patient is alive.
+      - name: is_deceased
+        description: True when the feed carries a death date.
+        data_tests:
+          - not_null
+      - name: age_at_death_years
+        description: Completed years between birth and death, capped at 90; null while the patient is alive.
+      - name: is_age_at_death_90_or_older
+        description: True when the capped age_at_death_years hides a real age above 89.
+        data_tests:
+          - not_null
+      - name: gender
+        description: M or F.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['M', 'F']
+      - name: race
+        description: Primary race as generated by Synthea.
+        data_tests:
+          - not_null
+      - name: ethnicity
+        description: hispanic or nonhispanic.
+        data_tests:
+          - not_null
+      - name: marital_status
+        description: M for married, S for single; null on 384 of 1,163 patients.
+      - name: state
+        description: State of residence, the smallest geography Safe Harbor allows besides the ZIP prefix.
+        data_tests:
+          - not_null
+      - name: zip3
+        description: >
+          First three digits of the ZIP, or 000 where the prefix is one of the
+          seventeen HHS restricts. Null on 545 of 1,163 patients, because the
+          feed carries no ZIP for them.
+      - name: lifetime_healthcare_expenses
+        description: Lifetime healthcare cost paid by the patient.
+        data_tests:
+          - not_null
+      - name: lifetime_healthcare_coverage
+        description: Lifetime healthcare cost covered by payers.
+        data_tests:
+          - not_null
+
+  - name: dim_payer
+    description: >
+      One row per insurance payer. payer_category splits the ten payers into
+      the three groups a payer-mix report needs. NO_INSURANCE is Synthea's
+      self-pay stand-in and is the payer on 13,620 of 61,459 encounters, more
+      than any real plan, so it is categorised explicitly rather than left to
+      be counted as commercial. The lifetime totals are Synthea's own rollups
+      across the population it generated and do not reconcile to this sample's
+      encounters.
+    columns:
+      - name: payer_id
+        description: Synthea payer UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: payer_name
+        description: Payer name.
+        data_tests:
+          - unique
+          - not_null
+      - name: payer_category
+        description: self_pay for NO_INSURANCE, public for Medicare, Medicaid and Dual Eligible, commercial for the rest.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['self_pay', 'public', 'commercial']
+      - name: is_self_pay
+        description: True only for NO_INSURANCE.
+        data_tests:
+          - not_null
+      - name: headquarters_state
+        description: State the payer is headquartered in; null for NO_INSURANCE.
+      - name: lifetime_amount_covered
+        description: Lifetime cost the payer covered, as Synthea rolled it up.
+        data_tests:
+          - not_null
+      - name: lifetime_amount_uncovered
+        description: Lifetime cost the payer did not cover, as Synthea rolled it up.
+        data_tests:
+          - not_null
+      - name: lifetime_revenue
+        description: Lifetime premium revenue, as Synthea rolled it up.
+        data_tests:
+          - not_null
+      - name: lifetime_covered_encounters
+        description: Encounters the payer covered, as Synthea rolled them up.
+        data_tests:
+          - not_null
+      - name: lifetime_uncovered_encounters
+        description: Encounters the payer did not cover, as Synthea rolled them up.
+        data_tests:
+          - not_null
+      - name: lifetime_unique_customers
+        description: Distinct members the payer served.
+        data_tests:
+          - not_null
+      - name: lifetime_member_months
+        description: Total months of membership across the payer's members.
+        data_tests:
+          - not_null
+      - name: quality_of_life_score_avg
+        description: Average quality of life score across the payer's members, as Synthea computed it.
+        data_tests:
+          - not_null
+
+  - name: dim_provider
+    description: >
+      One row per clinician. The staging model's address columns repeat the
+      employing organization's address rather than a clinician's own, so they
+      are dropped here. Geography belongs to dim_organization; carrying it in
+      two places would allow two answers to the same question. Join through
+      organization_id.
+    columns:
+      - name: provider_id
+        description: Synthea provider UUID. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: organization_id
+        description: Organization that employs the clinician.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_organization')
+                field: organization_id
+      - name: provider_name
+        description: Clinician name. Not unique.
+        data_tests:
+          - not_null
+      - name: gender
+        description: M or F.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['M', 'F']
+      - name: specialty
+        description: Clinical specialty as free text, 63 distinct values in this sample.
+        data_tests:
+          - not_null
+      - name: lifetime_encounter_count
+        description: Encounters Synthea attributed to the clinician across the population it generated.
+        data_tests:
+          - not_null
+
+  - name: fct_encounter
+    description: >
+      One row per encounter, 61,459 rows, the same grain as
+      stg_synthea__encounters. Nothing is filtered;
+      tests/assert_encounter_fact_matches_staging_grain.sql asserts it. Every
+      foreign key resolves to its dimension. The measures added here are the
+      ones staging is not allowed to derive: patient_responsibility,
+      duration_minutes, patient_age_years and condition_count.
+      patient_age_years is capped at 90 to match the Safe Harbor rule
+      dim_patient applies, so the fact cannot be used to recover an age the
+      dimension hides.
+    columns:
+      - name: encounter_id
+        description: Synthea encounter UUID. Degenerate primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: date_id
+        description: Day the encounter started, as YYYYMMDD.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_id
+      - name: patient_id
+        description: Patient seen.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patient')
+                field: patient_id
+      - name: organization_id
+        description: Organization where the encounter took place.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_organization')
+                field: organization_id
+      - name: provider_id
+        description: Clinician who saw the patient.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_provider')
+                field: provider_id
+      - name: payer_id
+        description: Payer for the encounter, including the self-pay stand-in.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_payer')
+                field: payer_id
+      - name: encounter_code
+        description: SNOMED CT code for the encounter type.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_encounter_type')
+                field: encounter_code
+      - name: encounter_class
+        description: >
+          Setting of the encounter. A degenerate dimension rather than an
+          attribute of dim_encounter_type, because five codes appear in more
+          than one class.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ambulatory', 'emergency', 'inpatient', 'outpatient', 'urgentcare', 'wellness']
+      - name: reason_code
+        description: SNOMED CT code for why the visit happened; null on 45,502 of 61,459 rows.
+      - name: reason_description
+        description: Text label for the reason code; null wherever reason_code is null.
+      - name: started_at
+        description: Start of the encounter, UTC.
+        data_tests:
+          - not_null
+      - name: stopped_at
+        description: End of the encounter, UTC.
+        data_tests:
+          - not_null
+      - name: duration_minutes
+        description: >
+          Completed minutes between start and end. 58,112 of 61,459 encounters
+          run an hour or less; three run longer than a year, which is a Synthea
+          artifact rather than a data error, so nothing filters them.
+        data_tests:
+          - not_null
+      - name: patient_age_years
+        description: Completed years between birth and the encounter start, capped at 90. 2,061 encounters are capped.
+        data_tests:
+          - not_null
+      - name: condition_count
+        description: Conditions recorded at this encounter. Zero on 34,555 of 61,459 encounters.
+        data_tests:
+          - not_null
+      - name: base_encounter_cost
+        description: Cost of the visit itself before any procedure, medication or supply is added.
+        data_tests:
+          - not_null
+      - name: total_claim_cost
+        description: Full billed cost of the encounter.
+        data_tests:
+          - not_null
+      - name: payer_coverage
+        description: Portion of total_claim_cost the payer paid.
+        data_tests:
+          - not_null
+      - name: patient_responsibility
+        description: >
+          total_claim_cost less payer_coverage. Never negative, which
+          tests/assert_patient_responsibility_not_negative.sql asserts.
+        data_tests:
+          - not_null

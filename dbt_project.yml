@@ -21,3 +21,5 @@ models:
   health_analytics:
     staging:
       +materialized: table
+    marts:
+      +materialized: table

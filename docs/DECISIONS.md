@@ -218,3 +218,91 @@ models. Not a decision, but facts the next decisions rest on.
 - `providers` addresses repeat the employing organization's address, so a
   provider dimension adds nothing geographic that the organization does not
   already have.
+
+## 12. Marts are de-identified to HIPAA Safe Harbor
+
+**Decided 2026-09-03**, settling the question section 6 deferred. `dim_patient`
+carries no name, no street address, no city or county, no coordinates and no
+full dates. Dates are reduced to the year, ZIP to its first three digits with
+the seventeen prefixes HHS restricts replaced by `000`, and any age over 89 is
+reported as 90. `fct_encounter.patient_age_years` is capped at 90 too, so the
+fact cannot be used to recover what the dimension hides.
+
+**Why.** The data is synthetic, so this protects nobody. That is the point: the
+rule is the deliverable. A staging layer that holds the full record and a mart
+layer that holds a de-identified one is how a real health system separates the
+restricted feed from the broadly readable analytics product, and writing the
+rule in one model where it can be read and tested is the difference between
+governance and an assertion that governance happened.
+`tests/assert_patient_dimension_excludes_direct_identifiers.sql` reads
+`information_schema` and fails if any forbidden column reappears, so a later
+edit that quietly adds one back breaks the build rather than the policy.
+
+**Against.** City-level and street-level analysis are gone, and age is coarse
+above 89. Keeping the identifiers and de-identifying only at the consumer was
+rejected: it puts the rule somewhere no test can see it.
+
+**Consequence.** Safe Harbor governs patient data, not a directory of care
+organizations, so `dim_organization` keeps its full address and coordinates.
+Anything that genuinely needs a patient's full date or street joins the staging
+model and inherits the responsibility for doing so.
+
+**What would reopen it.** A mart that needs finer geography or exact ages. The
+path is a second, explicitly restricted patient dimension, not loosening this
+one.
+
+## 13. Marts key on the natural Synthea identifiers
+
+**Decided 2026-09-03.** The dimensions key on the Synthea UUIDs that arrive in
+the feed. No hashed surrogate keys. `dim_date` is the exception, keyed on
+`date_id`, the day as a `YYYYMMDD` integer.
+
+**Why.** The UUIDs are already stable, globally unique, and non-null on every
+row, and every relationship test resolves against them. A hash would add a
+column that carries no information the UUID does not, and generating one needs
+either a `dbt_utils` dependency and a `dbt deps` step in CI or a hand-rolled
+macro. `dim_date` is keyed on an integer instead because a date spine has no
+natural identifier and `YYYYMMDD` is the conventional one.
+
+**What would reopen it.** A second source system with its own patient
+identifiers. Conforming two systems onto one patient dimension is exactly the
+problem a surrogate key exists to solve, and that is when to add one.
+
+## 14. Nothing reads the clock
+
+**Decided 2026-09-03.** No model calls `current_date`, `now()` or any equivalent.
+`dim_date` spans the first encounter in the data to the last, 1912-09-26 to
+2021-11-19, and ages are computed against a date the data supplies rather than
+against today.
+
+**Why.** Every number the README states has to be reproducible from a `dbt
+build`. A model that reads the clock produces different numbers tomorrow, which
+makes the README wrong on a schedule and makes a CI run that fails today
+impossible to distinguish from one that failed because of a change.
+
+**Consequence.** There is no "current age" anywhere. Age exists at an event, as
+`fct_encounter.patient_age_years`, and at death, as
+`dim_patient.age_at_death_years`. A dashboard that wants a current age computes
+it at query time, where the reader can see the clock being read.
+
+## 15. A known defect is warned, not filtered
+
+**Decided 2026-09-03.** 165 of 61,459 encounters start after the patient's
+recorded death date, three to fourteen days after, across 154 patients. Nothing
+filters them. `tests/assert_encounter_not_after_patient_death.sql` asserts the
+rule and is configured `severity: warn`, so `dbt build` reports the count on
+every run and completes.
+
+**Why.** Silently dropping the rows would make the fact disagree with staging
+for a reason no reader could see, and section 4 of this log makes staging the
+place where the feed is reproduced faithfully. Turning the test off would hide a
+real defect. Warning states the defect in the build output, prices it at 0.27
+percent of encounters, and turns it into a failure the moment it grows.
+
+**Consequence.** `dbt build` on this repo ends `PASS=192 WARN=1 ERROR=0`. The
+one warning is this test, and it is expected. CI treats warnings as success and
+errors as failure, so a genuine regression still breaks the build.
+
+**What would reopen it.** A mart whose question the defect actually distorts,
+such as a mortality or end-of-life measure. That mart excludes the rows itself
+and says so, rather than the fact excluding them for everybody.
