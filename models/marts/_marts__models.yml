@@ -1,6 +1,60 @@
 version: 2
 
 models:
+  - name: dim_condition
+    description: >
+      One row per SNOMED CT condition code, 202 of them, with a single chosen
+      description. The feed does not supply one description per code, the same
+      way it does not for encounter types: two codes carry two spellings each,
+      so the rule here is the one dim_encounter_type uses. It takes the
+      spelling recorded on the most rows and breaks ties on the description
+      text, so the result does not depend on row order.
+    columns:
+      - name: condition_code
+        description: SNOMED CT code for the condition. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: condition_description
+        description: The chosen description for the code, one of the spellings that appears in the feed.
+        data_tests:
+          - not_null
+      - name: source_semantic_tag
+        description: >
+          The parenthetical tag at the end of the chosen description, as
+          Synthea wrote it. It is named for the source because the source is
+          all it reflects. 47 codes are tagged finding and 54 disorder, 5
+          situation and 1 person, and the remaining 95 carry no tag at all, so
+          this classifies a little over half the dimension and is not a
+          clinical taxonomy. Two further limits are worth stating. The tag
+          follows the chosen spelling, so code 84757009 reads Epilepsy with no
+          tag while 233604007 reads Pneumonia (disorder), on nothing more than
+          which spelling was more common. And code 80583007 arrives as
+          "Severe anxiety (panic) (finding" with the closing parenthesis
+          missing, so its tag is null too.
+          What the column is good for is one fact about the grain below it:
+          29,749 of the 38,094 rows in fct_condition are findings rather than
+          disorders, and the single most common code in the whole fact is
+          Full-time employment.
+      - name: source_spelling_count
+        description: How many distinct descriptions the feed carries for this code. Greater than 1 means a spelling was chosen.
+        data_tests:
+          - not_null
+      - name: condition_count
+        description: >
+          Rows in fct_condition carrying this code, across every spelling.
+          Derived from the same feed as the fact, so it agrees with a count of
+          fct_condition rows on all 202 codes.
+        data_tests:
+          - not_null
+      - name: patient_count
+        description: >
+          Distinct patients who ever carried the code. Lower than
+          condition_count wherever a code recurs for one patient, which
+          happens on 3,944 of the 15,554 patient and code pairs in the sample.
+        data_tests:
+          - not_null
+
   - name: dim_date
     description: >
       Date dimension, one row per calendar day from the first encounter in the
@@ -185,9 +239,11 @@ models:
       - name: is_age_90_or_older
         description: >
           True when the greatest age this data reveals about the patient is
-          over 89, whether at death or at their last encounter. This is the
-          single aggregated category Safe Harbor permits, and it replaces the
-          year elements rather than sitting beside them.
+          over 89, measured at the latest of every date the marts publish for
+          them: their death, the start or the end of any encounter, and the
+          start or the end of any condition. This is the single aggregated
+          category Safe Harbor permits, and it replaces the year elements
+          rather than sitting beside them. docs/DECISIONS.md section 22.
         data_tests:
           - not_null
       - name: age_at_death_years
@@ -344,6 +400,114 @@ models:
         data_tests:
           - not_null
 
+  - name: fct_condition
+    description: >
+      One row per condition recorded for a patient at an encounter, 38,094
+      rows, the same grain as stg_synthea__conditions. The feed supplies no key
+      column, so the grain is patient_id, encounter_id and condition_code
+      together; docs/DECISIONS.md sections 10 and 21 record why no surrogate
+      key was added and what the fact does instead.
+      Nothing is filtered, which
+      tests/assert_condition_fact_matches_staging_grain.sql asserts. This is
+      the second fact in the star and it introduces exactly one dimension of
+      its own: patients and dates are the conformed ones fct_encounter already
+      uses, and the encounter is referenced rather than re-described. dim_date
+      is joined twice in two roles, once for the start of the condition and
+      once for its end.
+      Read condition here as anything the problem list carries, not as a
+      diagnosis. 29,749 of these rows are SNOMED findings rather than
+      disorders, and the most common code in the fact is Full-time employment;
+      docs/DECISIONS.md section 23 has the numbers.
+      patient_age_years is capped at 90 to match the category dim_patient
+      aggregates into, for the same reason it is capped on fct_encounter.
+    columns:
+      - name: patient_id
+        description: Patient the condition belongs to. Part of the grain.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patient')
+                field: patient_id
+      - name: encounter_id
+        description: >
+          Encounter the condition was recorded at. Part of the grain, and the
+          reference that lets a condition be sliced by anything on the
+          encounter fact. It resolves for every row.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_encounter')
+                field: encounter_id
+      - name: condition_code
+        description: SNOMED CT code for the condition. Part of the grain.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_condition')
+                field: condition_code
+      - name: start_date_id
+        description: Day the condition was recorded as beginning, as YYYYMMDD. The first of the two dim_date roles.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_id
+      - name: stop_date_id
+        description: >
+          Day the condition was recorded as ending, as YYYYMMDD. The second
+          dim_date role, and null on the 8,169 rows the feed leaves open.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_id
+      - name: started_date
+        description: >
+          Date the condition was recorded as beginning. A day, not a
+          timestamp, which is what the feed carries. Safe Harbor would not
+          permit a full date tied to an individual, and this fact carries one
+          for the same reason fct_encounter carries exact timestamps: the
+          claim is scoped to dim_patient and the marts layer as a whole is not
+          a Safe Harbor data set. docs/DECISIONS.md section 19.
+        data_tests:
+          - not_null
+      - name: stopped_date
+        description: Date the condition was recorded as ending; null on the 8,169 rows the feed leaves open.
+      - name: duration_days
+        description: >
+          Completed days between the start and the stop, null wherever the
+          feed records no stop. Half the resolved rows run longer than 371
+          days and the longest runs 20,195, because a chronic problem stays on
+          the list.
+      - name: is_open
+        description: >
+          True where the feed records no stop date, on 8,169 of 38,094 rows.
+          It means the record was never closed, which is not the same as
+          evidence the condition persists.
+        data_tests:
+          - not_null
+      - name: days_from_encounter_start
+        description: >
+          Signed days between the start of the encounter that recorded the
+          condition and the start of the condition itself. Zero on 30,469 of
+          38,094 rows and something else on the other 7,625, ranging from 8
+          days before the encounter to 562 days after. The column exists
+          because those two dates are not interchangeable, and a report that
+          dates conditions by their encounter would be wrong on a fifth of the
+          fact.
+        data_tests:
+          - not_null
+      - name: patient_age_years
+        description: >
+          Completed years between birth and the start of the condition, capped
+          at 90. 1,016 rows across 34 patients are capped.
+        data_tests:
+          - not_null
+
   - name: fct_encounter
     description: >
       One row per encounter, 61,459 rows, the same grain as
@@ -446,7 +610,12 @@ models:
         data_tests:
           - not_null
       - name: condition_count
-        description: Conditions recorded at this encounter. Zero on 34,555 of 61,459 encounters.
+        description: >
+          Problem list entries recorded at this encounter, zero on 34,555 of
+          61,459 of them. It counts the rows fct_condition carries, so it
+          inherits the same caveat: most of those rows are SNOMED findings
+          such as employment status rather than diagnoses.
+          docs/DECISIONS.md section 23.
         data_tests:
           - not_null
       - name: base_encounter_cost

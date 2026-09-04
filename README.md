@@ -43,10 +43,10 @@ CI publishes that same site to GitHub Pages on every push to `main`.
 
 ## What the build produces
 
-13 models and 180 tests, in about 1.5 seconds on a laptop:
+15 models and 202 tests, in under two seconds on a laptop:
 
 ```
-Done. PASS=192 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=193
+Done. PASS=216 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=217
 ```
 
 The one warning is expected and is explained under Data quality below.
@@ -56,10 +56,29 @@ columns to snake_case and casts them, and does nothing else: no filtering, no
 derived columns. Patients, encounters, conditions, organizations, providers,
 payers.
 
-**Marts**, 6 dimensions and 1 fact. `fct_encounter` is one row per encounter,
-61,459 rows, the same grain as its staging model, filtering nothing. Its
-foreign keys reach `dim_patient`, `dim_provider`, `dim_organization`,
-`dim_payer`, `dim_encounter_type` and `dim_date`.
+**Marts**, 7 dimensions and 2 facts at two different grains. `fct_encounter`
+is one row per encounter, 61,459 rows. `fct_condition` is one row per condition
+recorded for a patient at an encounter, 38,094 rows. Each carries the grain of
+its staging model and filters nothing.
+
+The second fact is the shape of the star rather than an addition to it.
+`dim_patient` and `dim_date` are conformed across both, which means a filter on
+either one selects the same patients and the same days on both sides, so the
+two facts can be summarized separately and the results lined up on those
+attributes. Drilling across like that is the only safe way to combine them.
+Joining the facts to each other instead fans an encounter out once per
+condition and drops the 34,555 encounters that recorded none, so an encounter
+measure summed through `fct_condition` is wrong in both directions at once.
+`fct_condition` adds exactly one dimension of its own, `dim_condition`, and
+references `fct_encounter` rather than re-describing the visit. It joins
+`dim_date` twice, once for the start of the condition and once for its end,
+which is the role-playing pattern rather than a second date table.
+
+Conformance is an assertion, not a diagram, so a test makes it:
+`tests/assert_condition_patient_matches_encounter_patient.sql` checks that the
+patient a condition names and the patient its encounter names are the same
+person. Both foreign keys can resolve while pointing at different people, which
+is exactly what a `relationships` test cannot see.
 
 The dimensions resolve real problems in the feed rather than renaming columns:
 
@@ -69,6 +88,14 @@ The dimensions resolve real problems in the feed rather than renaming columns:
   encounters and breaks ties on the text. Encounter class is not an attribute
   of the code, because five codes appear in more than one class, so class
   stays on the fact as a degenerate dimension.
+- `dim_condition` picks one description per SNOMED code by the same rule, and
+  carries the parenthetical semantic tag under the source's own name because
+  the source is all it reflects: 95 of the 202 codes have no tag, and one
+  arrives with the closing parenthesis missing. What it does show is worth
+  knowing before reading anything else off this fact. 29,749 of the 38,094
+  condition rows are SNOMED findings rather than disorders, and the most
+  common code in the whole fact is `Full-time employment`. A count of
+  conditions here is not a count of diagnoses.
 - `dim_payer` sorts the ten payers into self pay, public and commercial.
   Synthea's self-pay stand-in, `NO_INSURANCE`, is the payer on 13,620 of
   61,459 encounters, more than any real plan, so leaving it uncategorized
@@ -80,32 +107,36 @@ The dimensions resolve real problems in the feed rather than renaming columns:
   1912-09-26 to 2021-11-19. No model in this project reads the clock, so a
   rebuild produces the same numbers on any machine on any day.
 
-Money reconciles exactly between the fact and its staging model: 255,033,828.08
-billed, 63,530,758.42 covered by payers, 191,503,069.66 not covered by a
-payer. That residual is `uncovered_amount` rather than patient responsibility:
-in a real revenue cycle most of it is the contractual adjustment between
-charges and the negotiated rate, and Synthea carries neither adjustments nor
-allowed amounts, so the two cannot be separated here.
+Money reconciles exactly between `fct_encounter` and its staging model:
+255,033,828.08 billed, 63,530,758.42 covered by payers, 191,503,069.66 not
+covered by a payer. That residual is `uncovered_amount` rather than patient
+responsibility: in a real revenue cycle most of it is the contractual
+adjustment between charges and the negotiated rate, and Synthea carries neither
+adjustments nor allowed amounts, so the two cannot be separated here.
 Payer mix by encounter is 33,231 commercial, 14,608 public, 13,620 self pay.
 
 ## Data quality
 
-180 tests: 169 generic and 11 singular.
+202 tests: 188 generic and 14 singular.
 
-The generic tests are 121 `not_null`, 20 `unique`, 14 `relationships` and 14
+The generic tests are 134 `not_null`, 21 `unique`, 19 `relationships` and 14
 `accepted_values`. The relationships tests are real assertions rather than
 aspirations: every foreign key in the project resolves with zero orphans, from
-encounters to patients, organizations, providers and payers, from conditions
-to patients and encounters, from providers to organizations, and from the fact
-to each of its six dimensions.
+encounters to patients, organizations, providers and payers, from conditions to
+patients and encounters, from providers to organizations, from the encounter
+fact to each of its six dimensions, and from the condition fact to the patient,
+condition and date dimensions and to the encounter fact itself.
 
 The singular tests carry the assertions no generic test covers. Encounter and
 condition periods do not end before they start. A payer never covers more than
 the encounter was billed, so the uncovered residual is never negative. An
-encounter reason arrives as a code and a label together or not at all. The
-conditions feed has no key column, so a test asserts its grain instead. And
-no combination of columns in the marts recovers an age Safe Harbor hides,
-which is asserted against the data rather than against the column names.
+encounter reason arrives as a code and a label together or not at all. Neither
+fact filters, which is checked by comparing each one row for row against its
+staging model. The conditions feed has no key column, so one test asserts its
+grain in staging and a second asserts the fact preserved it. The two facts
+agree about which patient an encounter belongs to. And no combination of
+columns in the marts recovers an age Safe Harbor hides, which is asserted
+against the data rather than against the column names.
 
 **One test warns, on purpose.** 165 of 61,459 encounters start after the
 patient's recorded death date, one to fourteen days after, across 154
@@ -130,12 +161,26 @@ reveal such an age. So `dim_patient` withholds `birth_year` and `death_year`
 for those 35 patients rather than publishing them beside a capped age: keeping
 the years would let one subtraction undo the cap, and joining a birth year to
 a date on the fact would undo it for every encounter of that patient.
-`fct_encounter.patient_age_years` is capped at 90 to match.
+`patient_age_years` is capped at 90 on both facts to match.
 
-The claim is scoped to that one model. `fct_encounter` deliberately keeps
-exact service timestamps, because a fact that cannot say when something
-happened is not much of a fact. The marts layer as a whole is therefore not a
-Safe Harbor data set, and only `dim_patient` claims to be.
+A second fact is where a rule like this usually breaks, because the suppression
+has to hold against dates the dimension has never seen. So it is computed from
+every date the marts publish about a patient: their death, the start and the
+end of every encounter, and the start and the end of every condition. Not one
+per feed, because the obvious date is not always the latest one here. 165
+encounters start and 168 end after the patient's recorded death, and a
+condition can outlive the visit that recorded it by weeks. The test that reads
+the data checks all of them, against the exact birth date in staging rather
+than against year arithmetic, which is ambiguous by a year in both directions.
+Widening the rule moved no patient into or out of the 90-or-older category, and
+the highest age any published column now yields is 89. `docs/DECISIONS.md`
+section 22.
+
+The claim is scoped to one model. Both facts deliberately keep the dates of
+care, exact timestamps on `fct_encounter` and days on `fct_condition`, because
+a fact that cannot say when something happened is not much of a fact. The marts
+layer as a whole is therefore not a Safe Harbor data set, and only `dim_patient`
+claims to be.
 
 The data is synthetic, so this protects nobody. That is the point: the rule is
 the deliverable. Two tests enforce it, and the distinction between them is
@@ -181,6 +226,7 @@ it, and not before.
 `docs/DECISIONS.md` records every decision behind the project, each with what
 it was decided against and what would reopen it: why this Synthea archive,
 why sources are read in place, why staging is materialized as tables, why the
-marts key on natural identifiers, why nothing reads the clock, and why a known
-defect is warned rather than filtered. Read it before changing the
+marts key on natural identifiers, why the second fact conforms to the first
+one's dimensions instead of keying itself, why nothing reads the clock, and why
+a known defect is warned rather than filtered. Read it before changing the
 materialization, the sources, the dataset, or the identifier policy.

@@ -53,13 +53,22 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 - Staging is materialized as tables on DuckDB. See `docs/DECISIONS.md`.
 - Marts key on the natural identifiers the feed supplies. Most are Synthea
   UUIDs; `dim_date` keys on `date_id`, the day as a `YYYYMMDD` integer, and
-  `dim_encounter_type` on the SNOMED CT code. No hashed surrogate keys.
+  `dim_encounter_type` and `dim_condition` on the SNOMED CT code. No hashed
+  surrogate keys. Where the feed supplies none, the grain stays composite and
+  a singular test asserts it: `fct_condition` is keyed by `patient_id`,
+  `encounter_id` and `condition_code` together. `docs/DECISIONS.md` sections
+  10 and 21.
 - No model reads the clock. `current_date` and `now()` are banned, because
   every number the README states has to be reproducible from a `dbt build`.
 - `dim_patient` is de-identified to HIPAA Safe Harbor and two tests enforce
   it, one on the column list and one on the data. Read `docs/DECISIONS.md`
-  sections 12 and 19 before adding a column to it. Section 19 is there because
-  the first version of that rule did not hold.
+  sections 12, 19 and 22 before adding a column to it. Section 19 is there
+  because the first version of that rule did not hold. A new fact that
+  publishes a date against `patient_id` has to be added to the
+  `published_dates` union in `dim_patient` and to the clauses in
+  `tests/assert_safe_harbor_age_over_89_is_suppressed.sql`; the age
+  suppression is computed from every date the marts publish, not from the
+  encounter feed alone.
 - A column is named for what it measures, not for what it was meant to
   measure. `docs/DECISIONS.md` section 20 is a list of four times that went
   wrong here.

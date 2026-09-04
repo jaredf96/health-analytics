@@ -276,6 +276,11 @@ natural identifier and `YYYYMMDD` is the conventional one.
 identifiers. Conforming two systems onto one patient dimension is exactly the
 problem a surrogate key exists to solve, and that is when to add one.
 
+**Extended 2026-09-04.** `dim_condition` is a third dimension keyed on
+something other than a UUID, on the SNOMED CT code, for the same reason
+`dim_encounter_type` is. `fct_condition` has no key column at all, and section
+21 records why none was invented for it.
+
 ## 14. Nothing reads the clock
 
 **Decided 2026-09-03.** No model calls `current_date`, `now()` or any equivalent.
@@ -307,7 +312,7 @@ place where the feed is reproduced faithfully. Turning the test off would hide a
 real defect. Warning states the defect in the build output, prices it at 0.27
 percent of encounters, and turns it into a failure the moment it grows.
 
-**Consequence.** `dbt build` on this repo ends `PASS=192 WARN=1 ERROR=0`. The
+**Consequence.** `dbt build` on this repo ends `PASS=216 WARN=1 ERROR=0`. The
 one warning is this test, and it is expected. CI treats warnings as success and
 errors as failure, so a genuine regression still breaks the build.
 
@@ -431,6 +436,10 @@ and withholds `birth_year` and `death_year` for the 35 patients over 89.
 `is_age_at_death_90_or_older` became `is_age_90_or_older`, because the old
 name described a narrower question than the rule asks.
 
+**Widened 2026-09-04.** "At their last encounter" was still one date per
+patient, and a second fact publishes more. Section 22 replaces it with the
+maximum over every date the marts publish, and that is the rule in force.
+
 **Why the existing test did not catch it.**
 `assert_patient_dimension_excludes_direct_identifiers.sql` reads
 `information_schema` and compares column names against a list. `birth_year`
@@ -487,3 +496,164 @@ values did not deliver.
 describes what the author expected rather than what the query returns. The fix
 is the same each time, and it is cheaper than the alternative, which is a
 reader trusting the name.
+
+## 21. The second fact conforms rather than keying itself
+
+**Decided 2026-09-04.** `fct_condition` is one row per condition recorded for a
+patient at an encounter, 38,094 rows over 202 SNOMED CT codes. It introduces
+one dimension of its own, `dim_condition`, reuses `dim_patient` and `dim_date`
+exactly as `fct_encounter` uses them, and references `fct_encounter` by
+`encounter_id` rather than copying the encounter's organization, provider,
+payer and class down onto the condition grain.
+
+**Why.** A second fact earns its place by sharing dimensions with the first.
+Two facts over private copies of the same dimensions are two projects in one
+repository, and a patient count from one would not be comparable with a patient
+count from the other. Copying the encounter's foreign keys down was the
+alternative: it gives a wider table that answers the same questions, at the
+price of a second set of values that has to be kept in step with the first.
+
+**What conforming does and does not license.** A filter on `dim_patient` or
+`dim_date` selects the same patients and the same days on either side, so the
+two facts can be summarized separately and lined up on those attributes. That
+is drilling across, and it is the only safe way to combine them. Joining the
+facts to each other fans an encounter out once per condition and drops the
+34,555 encounters that recorded none, so an encounter measure summed through
+`fct_condition` is understated and overstated at the same time. Sharing a
+dimension makes two answers comparable; it does not make one join correct.
+
+**The grain, and the key that was not added.** The feed supplies no key column,
+so the grain is `patient_id`, `encounter_id` and `condition_code` together,
+which section 10 settled. Section 10 named a mart needing a stable
+single-column key as what would reopen it. This mart does not need one. Every
+join into the fact is on a dimension key rather than on the fact's own, and the
+only thing lost is the `unique` generic test, which cannot run on three
+columns; `tests/assert_condition_fact_grain_is_unique.sql` does that job on the
+mart, next to `assert_condition_grain_is_unique.sql` which does it on staging.
+Adding a hash would have introduced surrogate keys to a project that keys on
+natural identifiers everywhere else, for one model, against section 13.
+
+**dim_date is joined twice, in two roles.** A condition has a start and an end,
+so the fact carries `start_date_id` and `stop_date_id`, both foreign keys into
+`dim_date`, the second null on the 8,169 rows the feed leaves open. A second
+date table would have been the same rows under a different name.
+
+**Conformance is asserted, not drawn.** A condition row names a patient and an
+encounter, and the encounter names a patient of its own. Both foreign keys can
+resolve while pointing at different people, and two `relationships` tests would
+pass on that.
+`tests/assert_condition_patient_matches_encounter_patient.sql` asserts the two
+facts agree; they do, on all 38,094 rows.
+
+**A property of the feed the fact has to state.** The condition date and the
+date of the encounter that recorded it are the same on 30,469 rows and differ
+on the other 7,625, from 8 days before the encounter to 562 days after. A
+report that dated conditions by their encounter would therefore be wrong on a
+fifth of the fact, so `days_from_encounter_start` carries the difference rather
+than leaving a reader to assume there is none.
+
+**What would reopen it.** A model that has to join to the condition grain on
+its own key, such as a status snapshot or a bridge to a code hierarchy. The
+hashed key belongs in that model's fact, where the hash function and the column
+order sit next to what depends on them.
+
+## 22. The suppression rule reads every date the marts publish
+
+**Decided 2026-09-04**, while adding the second fact, and corrected the same
+day after a review pointed out that the first version of it did not do what its
+own heading said.
+
+Section 19 closed the Safe Harbor age leak by computing the greatest age this
+data reveals about a patient and withholding the year elements above 89. That
+computation read one date per patient: their death if they died, the start of
+their last encounter otherwise. Two things are wrong with one date per patient
+here, and the second fact made both of them matter.
+
+**Death does not close the record.** Taking the death date and stopping there
+skips everything the facts publish afterwards, and this feed publishes plenty:
+165 encounters start and 168 end after the patient's recorded death, by up to
+14 days. That is the defect section 15 warns about rather than filters, so the
+suppression rule has to survive it rather than assume it away.
+
+**The obvious date per feed is not the latest one.** An encounter's end is not
+always within a day of its start: 27 of them end later than that patient's last
+encounter began, and three run longer than a year. A condition outlives the
+visit that recorded it, so 129 stop after the patient's last encounter, by up
+to 69 days.
+
+So `dim_patient` takes the maximum over every date the marts publish for a
+patient: the death date, the start and the end of every encounter, and the
+start and the end of every condition.
+`tests/assert_safe_harbor_age_over_89_is_suppressed.sql` asserts the same
+closure over the same five columns.
+
+**The test reads the exact birth date, not the published year.** It joins
+`stg_synthea__patients` and computes completed years. Year arithmetic on the
+mart is ambiguous by a year in both directions, so a threshold loose enough to
+avoid false positives is also loose enough to let a real 90-year-old through,
+and the rule turns on the patient's actual age rather than on what subtraction
+happens to yield. A test may read staging; the mart may not. The clause is not
+vacuous: 5,799 fact rows across 35 patients do put a patient over 89 at a
+published date, and every one of those patients has their year elements
+withheld.
+
+**What it changed in the output.** Nothing that is published. The reference
+date moves for 257 patients, by up to 69 days, and that moves the computed
+maximum age for 3 of them, each by one year. None of the three crosses the
+threshold: the aggregated category still holds the same 35 patients, and no
+year element that was published before is withheld now. The highest age any
+combination of published columns yields is 89.
+
+That result is the point rather than an argument against the change. The
+narrow rule gave the right answer because no date happened to cross a birthday,
+and the wide one gives it because the rule covers the dates. A rule that holds
+by coincidence fails silently the first time the coincidence does, and section
+19 exists because that had already happened here once.
+
+**Against.** Leaving the rule on encounter starts and relying on the test to
+catch a violation. Rejected: a test asserts the closure, it does not produce
+it, and a build that fails on real data leaves nothing to ship.
+
+**Consequence.** `dim_patient` now depends on `stg_synthea__conditions` as well
+as on the encounter feed. A dimension reading a fact's source feed looks
+backwards until you notice it was already doing it for the same reason. Any
+third fact that publishes a date against `patient_id` has to be added to the
+`published_dates` union here and to the union inside that test, and neither
+will complain about the omission unless the new dates actually cross a
+birthday, which is why this entry says so plainly.
+
+## 23. A condition row is not a diagnosis
+
+**Recorded 2026-09-04**, from profiling the feed before the fact was written.
+Not a decision, but the fact a reader of `fct_condition` needs first.
+
+29,749 of the 38,094 rows carry the SNOMED semantic tag `finding` rather than
+`disorder`, nearly four to one. The most common code in the whole fact is
+`160903007`, `Full-time employment (finding)`, on 13,805 rows, followed by
+`Stress (finding)` on 5,137 and `Part-time employment (finding)` on 2,426.
+Synthea writes employment status, social isolation and similar social context
+onto the problem list the same way it writes pneumonia. So a count of rows in
+this fact is a count of problem list entries, and reading it as a count of
+diagnoses overstates them several times over. `fct_encounter.condition_count`
+counts the same rows and inherits the same caveat.
+
+**Why the tag is named for the source.** `dim_condition.source_semantic_tag` is
+the parenthetical at the end of the description Synthea emitted, and that is
+all it is. 95 of the 202 codes carry no tag, and the untagged group holds
+plainly clinical labels including `Hypertension`, `Prediabetes` and
+`Miscarriage in first trimester`, so the tag undercounts disorders and cannot
+be used as a filter for them. Two further limits: the tag follows whichever
+spelling the dimension chose, which is why code 84757009 reads `Epilepsy` with
+no tag while 233604007 reads `Pneumonia (disorder)`; and code 80583007 arrives
+as `Severe anxiety (panic) (finding` with the closing parenthesis missing, so
+its tag is null as well.
+
+**Why it is here rather than fixed.** This is section 16 again in a different
+column. The generator's shape is not a defect the project can correct, and a
+model that quietly filtered the social findings out would answer a question
+nobody asked and disagree with staging for a reason no reader could see. Naming
+it is the fix.
+
+**What would reopen it.** A mart that genuinely needs a clinical category. The
+path is a curated code list or a real SNOMED hierarchy loaded as a source, not
+a string suffix.

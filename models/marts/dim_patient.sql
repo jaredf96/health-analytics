@@ -1,8 +1,8 @@
 -- Patient dimension, de-identified to the HIPAA Safe Harbor standard.
--- docs/DECISIONS.md sections 12 and 19 record why and what it costs. In short:
--- names, street address, city, county, coordinates and full dates never leave
--- staging; dates are reduced to the year, ZIP to its first three digits with
--- the seventeen low-population prefixes zeroed, and everyone over 89 is
+-- docs/DECISIONS.md sections 12, 19 and 22 record why and what it costs. In
+-- short: names, street address, city, county, coordinates and full dates never
+-- leave staging; dates are reduced to the year, ZIP to its first three digits
+-- with the seventeen low-population prefixes zeroed, and everyone over 89 is
 -- aggregated into a single category with the year elements that would reveal
 -- the age removed. The data is synthetic, so nothing here protects a real
 -- person; the point is that the rule is written down, applied in one place,
@@ -32,29 +32,79 @@ encounters as (
 
 ),
 
--- The last date on which each patient appears. Safe Harbor suppresses the
--- date elements indicative of an age over 89, so the test has to be the
--- greatest age this data can reveal about a patient, not only their age at
--- death. A living patient with encounters in 2021 and a birth year of 1917 is
--- over 89 just as plainly as a deceased one.
+conditions as (
+
+    select * from {{ ref('stg_synthea__conditions') }}
+
+),
+
+-- Every date the marts publish about a patient, one row per date. Safe Harbor
+-- suppresses the date elements indicative of an age over 89, so the test has
+-- to be the greatest age this data can reveal, not the age at any one event. A
+-- living patient with encounters in 2021 and a birth year of 1917 is over 89
+-- just as plainly as a deceased one.
+--
+-- Every one of these dates is listed rather than the obvious one per feed,
+-- because the obvious one is not always the latest. The death date does not
+-- close the record: 165 encounters start and 168 end after the patient's
+-- recorded death, by up to 14 days, which is the defect section 15 warns
+-- about rather than filters. An encounter's end is not always within a day of
+-- its start: 27 of them end later than that patient's last encounter began, by
+-- up to 11 days, and three run longer than a year. And a condition outlives
+-- the visit that recorded it, so 129 stop after the patient's last encounter,
+-- by up to 69 days.
+--
+-- The rule is therefore the maximum over all of them. Anything narrower is
+-- true only while no date happens to cross a birthday, which is not a rule.
+-- docs/DECISIONS.md section 22.
+published_dates as (
+
+    select patient_id, death_date                           as published_date
+    from patients
+    where death_date is not null
+
+    union all
+
+    select patient_id, cast(started_at as date)             as published_date
+    from encounters
+
+    union all
+
+    select patient_id, cast(stopped_at as date)             as published_date
+    from encounters
+
+    union all
+
+    select patient_id, started_date                         as published_date
+    from conditions
+
+    union all
+
+    select patient_id, stopped_date                         as published_date
+    from conditions
+    where stopped_date is not null
+
+),
+
 last_seen as (
 
     select
         patient_id,
-        max(cast(started_at as date))                       as last_encounter_date
-    from encounters
+        max(published_date)                                 as last_published_date
+    from published_dates
     group by patient_id
 
 ),
 
--- Fallback for a patient the encounter feed never mentions. Using the last
--- date in the dataset is the conservative choice: it assumes the patient was
--- alive for the whole window rather than treating the age as unknowable.
--- Nothing here reads the clock, so a rebuild produces the same rows.
+-- Fallback for a patient no fact mentions and who has no recorded death.
+-- Using the last date in the dataset is the conservative choice: it assumes
+-- the patient was alive for the whole window rather than treating the age as
+-- unknowable. Nothing here reads the clock, so a rebuild produces the same
+-- rows.
 data_end as (
 
-    select max(cast(started_at as date))                    as last_date
-    from encounters
+    select max(published_date)                              as last_date
+    from published_dates
 
 ),
 
@@ -62,9 +112,11 @@ attained as (
 
     select
         p.*,
+        -- The death date is one of the published dates rather than a
+        -- short circuit ahead of them, because dates after death exist here.
         {{ completed_years(
             'p.birth_date',
-            'coalesce(p.death_date, l.last_encounter_date, d.last_date)'
+            'coalesce(l.last_published_date, d.last_date)'
         ) }}                                                as max_attained_age
     from patients p
     left join last_seen l using (patient_id)
