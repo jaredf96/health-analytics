@@ -43,10 +43,10 @@ CI publishes that same site to GitHub Pages on every push to `main`.
 
 ## What the build produces
 
-15 models and 202 tests, in under two seconds on a laptop:
+15 models and 204 tests, in under two seconds on a laptop:
 
 ```
-Done. PASS=216 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=217
+Done. PASS=218 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=219
 ```
 
 The one warning is expected and is explained under Data quality below.
@@ -96,10 +96,15 @@ The dimensions resolve real problems in the feed rather than renaming columns:
   condition rows are SNOMED findings rather than disorders, and the most
   common code in the whole fact is `Full-time employment`. A count of
   conditions here is not a count of diagnoses.
-- `dim_payer` sorts the ten payers into self pay, public and commercial.
-  Synthea's self-pay stand-in, `NO_INSURANCE`, is the payer on 13,620 of
-  61,459 encounters, more than any real plan, so leaving it uncategorized
-  would inflate commercial volume by 41 percent.
+- `dim_payer` groups the ten payers twice, at two widths.
+  `payer_financial_class` names the program that pays and keeps Medicare,
+  Medicaid and Dual Eligible apart, because those three pay at different
+  rates and are separate lines on a payer-mix report. `payer_category` rolls
+  them into public for the reads that want the sector. The rollup is derived
+  from the class rather than mapped from the payer name a second time, so the
+  two cannot disagree. Synthea's self-pay stand-in, `NO_INSURANCE`, is the
+  payer on 13,620 of 61,459 encounters, more than any real plan, so leaving
+  it unclassed would inflate commercial volume by 41 percent.
 - `dim_provider` drops the address columns, which repeated the employing
   organization's address rather than carrying a clinician's own. Geography
   belongs to `dim_organization`, once.
@@ -113,13 +118,16 @@ covered by a payer. That residual is `uncovered_amount` rather than patient
 responsibility: in a real revenue cycle most of it is the contractual
 adjustment between charges and the negotiated rate, and Synthea carries neither
 adjustments nor allowed amounts, so the two cannot be separated here.
-Payer mix by encounter is 33,231 commercial, 14,608 public, 13,620 self pay.
+Payer mix by encounter is 33,231 commercial, 13,620 self pay, 8,482 Medicare,
+5,283 Medicaid and 843 dual eligible. Those last three are the 14,608
+encounters `payer_category` reports as public, and Medicare alone is 58
+percent of them.
 
 ## Data quality
 
-202 tests: 188 generic and 14 singular.
+204 tests: 190 generic and 14 singular.
 
-The generic tests are 134 `not_null`, 21 `unique`, 19 `relationships` and 14
+The generic tests are 135 `not_null`, 21 `unique`, 19 `relationships` and 15
 `accepted_values`. The relationships tests are real assertions rather than
 aspirations: every foreign key in the project resolves with zero orphans, from
 encounters to patients, organizations, providers and payers, from conditions to

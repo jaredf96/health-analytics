@@ -657,3 +657,65 @@ it is the fix.
 **What would reopen it.** A mart that genuinely needs a clinical category. The
 path is a curated code list or a real SNOMED hierarchy loaded as a source, not
 a string suffix.
+
+## 24. Payer mix needs the program, not the sector
+
+**Decided 2026-09-08.** `dim_payer` now carries two groupings of the same ten
+payers. `payer_financial_class` names the program that pays: `medicare`,
+`medicaid`, `dual_eligible`, `commercial`, `self_pay`. `payer_category` is the
+older and coarser one and keeps its three values, `self_pay`, `public`,
+`commercial`.
+
+**Why the finer column.** `public` is the wrong width for the report this
+dimension exists to serve. Medicare, Medicaid and dual eligible pay at
+different rates and are separate lines on every payer mix a health system
+reads, so collapsing them answers a question nobody asks. Across the 61,459
+encounters the split is 33,231 commercial, 13,620 self pay, 8,482 Medicare,
+5,283 Medicaid and 843 dual eligible. `public` reports those last three as one
+number, 14,608, which hides that Medicare is 58 percent of public volume and
+dual eligible is under 6 percent of it.
+
+**Why both, rather than a rename.** `payer_category` is documented, tested and
+already published, and the sector is the right width for some questions. The
+finer column costs one column and one `accepted_values` test; replacing the
+coarser one would break a reader for no gain.
+
+**Why the rollup is derived from the class.** Two independent `case` lists over
+the same ten names is the failure mode where a payer is added to one and
+forgotten in the other, and no test would catch it: both columns still pass
+`accepted_values`, and the wrong row is a value that exists. So
+`payer_category` is computed from `payer_financial_class`, collapsing the three
+public programs and passing the other two values through unchanged, and
+`is_self_pay` is derived from the class for the same reason. There is one
+mapping from payer name in this model, not three.
+
+**What the column is not.** In a real revenue cycle, financial class is set on
+the account, not on the payer, because one payer sells products in more than
+one class: a Medicare Advantage plan under a commercial brand is financial
+class Medicare, and the payer name would say the opposite. Nothing in this feed
+supplies a plan or product. `payers.csv` carries a name, a headquarters
+address, and lifetime money and count rollups; `encounters.csv` carries one
+payer and a coverage amount. So the mapping from name to class is one to one
+here and belongs on the dimension, which is true of this generator and not of a
+real one.
+
+Coverage is not one payer per patient either. `payer_transitions.csv` records a
+secondary payer on 1,980 of its 53,101 coverage spans, and every one of them is
+Medicare primary with a commercial supplement. That feed is not staged, and
+`fct_encounter` carries a single `payer_id`, so the class on an encounter is
+the class of its primary payer and nothing more. Note that Synthea models dual
+coverage twice over: `Dual Eligible` is also a payer in its own right, on 255
+spans, and those never carry a secondary.
+
+**Against.** Deriving the class from anything but the name. There is nothing
+else to derive it from, per the columns above. Also against: adding a
+`medicare_advantage` value on the grounds that a real mix has one. Rejected as
+section 16 and section 23 again, a category the data cannot support. Synthea
+has one Medicare payer and no plan detail, so the value would be empty on every
+row.
+
+**What would reopen it.** A feed carrying the plan or the product, or a payer
+selling in more than one class. Either one moves financial class off the
+dimension and onto the encounter, because it would stop being an attribute of
+the payer. Staging `payer_transitions` would also reopen it, since a secondary
+payer makes the class of an encounter a function of two payers rather than one.
