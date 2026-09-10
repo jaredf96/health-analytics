@@ -303,8 +303,10 @@ it at query time, where the reader can see the clock being read.
 **Decided 2026-09-03.** 165 of 61,459 encounters start after the patient's
 recorded death date, one to fourteen days after, across 154 patients. Nothing
 filters them. `tests/assert_encounter_not_after_patient_death.sql` asserts the
-rule and is configured `severity: warn`, so `dbt build` reports the count on
-every run and completes.
+rule and warns at the 165 that exist rather than failing, so `dbt build` reports
+the count on every run and completes. It warns above 0 and errors above 165; the
+amendment below says why it is written that way rather than as a bare
+`severity: warn`.
 
 **Why.** Silently dropping the rows would make the fact disagree with staging
 for a reason no reader could see, and section 4 of this log makes staging the
@@ -312,9 +314,13 @@ place where the feed is reproduced faithfully. Turning the test off would hide a
 real defect. Warning states the defect in the build output, prices it at 0.27
 percent of encounters, and turns it into a failure the moment it grows.
 
-**Consequence.** `dbt build` on this repo ends `PASS=216 WARN=1 ERROR=0`. The
-one warning is this test, and it is expected. CI treats warnings as success and
-errors as failure, so a genuine regression still breaks the build.
+**Consequence.** `dbt build` on this repo ends `WARN=2`. This test is one of
+the two, and section 25 is the other; both are expected. CI treats warnings as
+success and errors as failure, so a genuine regression still breaks the build.
+
+**Amended 2026-09-10.** The claim above, that the defect becomes a failure the
+moment it grows, was not enforced when it was written. Section 26 says what was
+wrong and what the test carries now.
 
 **What would reopen it.** A mart whose question the defect actually distorts,
 such as a mortality or end-of-life measure. That mart excludes the rows itself
@@ -719,3 +725,108 @@ selling in more than one class. Either one moves financial class off the
 dimension and onto the encounter, because it would stop being an attribute of
 the payer. Staging `payer_transitions` would also reopen it, since a secondary
 payer makes the class of an encounter a function of two payers rather than one.
+
+## 25. Length of stay counts midnights, and only for inpatients
+
+**Decided 2026-09-08.** `fct_encounter.length_of_stay_days` is the discharge
+date less the admission date, computed on the 1,728 encounters whose class is
+`inpatient` and null on the other 59,731.
+`tests/assert_length_of_stay_is_inpatient_only.sql` asserts that split, and
+`tests/assert_inpatient_length_of_stay_is_plausible.sql` warns on stays longer
+than a calendar year.
+
+**Why only inpatients.** A length of stay is a census measure: it counts the
+nights a bed was occupied. A fifteen-minute wellness visit does not have one.
+Publishing zero on 59,731 rows would put a number in the column that means "not
+applicable" while reading as "discharged the same day", and any average taken
+over the fact without a class filter would then be wrong by a factor of thirty
+five. Section 20 of this log is four columns renamed for exactly that failure,
+a name promising something the values do not deliver. Null is the honest value,
+and it costs one nullable measure in a fact where every other measure is
+`not_null`.
+
+**Why midnights rather than elapsed time.** `duration_minutes` already carries
+elapsed time, so a length of stay divided out of it would be a unit and not a
+measure. The number a hospital reports is a count of nights, because a bed is
+billed and censused by the night and not by the hour. The two do not agree:
+they differ on 158 of the 1,728 inpatient rows, so this is a second measure
+rather than the first one rescaled.
+
+**Why this does not contradict section 18.** That section rejected
+`date_diff('year', ...)` as an age and this section adopts `date_diff('day',
+...)` as a stay, which look like opposite rulings on the same function. They
+are rulings on two different questions. Age is a duration a person has lived,
+so counting calendar-year boundaries overstates it and completed years is the
+answer. A stay is a count of nights a bed was held, so the boundaries crossed
+are the answer and elapsed hours are not. The test in both cases is the same:
+what does the number mean to the person reading it.
+
+**The missing discharge rule.** There is none, deliberately. `stopped_at` is
+`not_null` in staging and in the fact, and 61,459 of 61,459 rows carry one, so
+no `coalesce` sits between the feed and the measure. If a future feed ever
+carried an open stay, the `not_null` test fails first and loudly, rather than
+the stay being silently measured against a null and landing as zero. A
+`coalesce` to the current date would also break section 14, which is that
+nothing in this project reads the clock.
+
+**The same-day case.** Under this rule an admission and discharge on the same
+date is 0 nights. No such encounter exists here; the minimum is 1 and 1,624 of
+the 1,728 are exactly 1. Some health systems report a same-day stay as 1 day
+instead. That convention is not applied here, because it would put a branch in
+the model that no row in the build exercises, and an untested branch is a
+liability rather than a safeguard.
+
+**Consequence.** The build carries a second expected warning. One inpatient
+stay runs 4,969 days, admitted 1996 and discharged 2010, which is a Synthea
+artifact of the same kind as the post-death encounters in section 15 and is
+handled the same way: warned, priced at 1 of 1,728, and not filtered. Three
+more stays run between 57 and 335 days, which are long but not impossible, so
+the threshold sits at a year rather than at the point the data thins out. The
+test pins the tolerated count at 1 and errors above it, for the reason section
+26 gives.
+
+**What would reopen it.** A feed that distinguishes observation from inpatient,
+or one that carries a discharge disposition. Either would make the scoping rule
+a property of the encounter rather than an inference from its class.
+
+## 26. A warning that does not fail on growth is not a control
+
+**Decided 2026-09-10**, from a review of the length-of-stay change before it was
+committed.
+
+Two tests in this project are documented as reporting a known defect on every
+run and turning into a failure the moment it grows. Section 15 has made that
+claim since the first release. Both were configured `severity: warn` and nothing
+else, and that configuration does not do it. `severity: warn` warns whenever the
+test returns any rows, at any count. The post-death test would have reported the
+same single warning at 165 rows and at 1,650, and CI, which treats a warning as
+success, would have stayed green through a tenfold regression.
+
+The threshold form does what the prose promised:
+
+```
+{{ config(severity = 'error', warn_if = '> 0', error_if = '> 165') }}
+```
+
+`severity: warn` is not that form with a default. Setting `severity: warn`
+alongside an `error_if` discards the threshold; dbt 1.12.3 reports `configured
+to warn if != 0` and warns, whatever the count. Only `severity: error` evaluates
+both bounds, warning above `warn_if` and failing above `error_if`.
+
+**Consequence.** The tolerated count is now pinned in each test at the count
+that exists today: 165 for the post-death encounters, 1 for the implausible
+inpatient stay. The build still ends `WARN=2 ERROR=0`, because both counts sit
+at their bound. One more post-death encounter, or one more year-long stay, is an
+error and fails CI. The pinned numbers are the cost: a change that legitimately
+moves either count has to move the bound in the same commit, which is the point,
+because that is the moment a human should be looking.
+
+**Why not soften the prose instead.** That was the cheaper fix and it was
+rejected. The two tests are the project's argument that a known defect can be
+priced rather than hidden, and an unenforced control is worse than an honest
+absence of one: it reads as a guarantee to anyone who does not open the file.
+The repository is public, and the claim was checkable and wrong.
+
+**What would reopen it.** A count that moves for a legitimate reason often
+enough that the bound becomes churn. That would mean the defect is not stable,
+which is itself the signal the test exists to give.

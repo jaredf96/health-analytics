@@ -3,10 +3,10 @@
 -- tests/assert_encounter_fact_matches_staging_grain.sql asserts.
 --
 -- Measures added here rather than in staging, where derived columns are not
--- allowed: uncovered_amount, duration_minutes, patient_age_years, and
--- condition_count. patient_age_years is capped at 90 to match the Safe Harbor
--- rule dim_patient applies, so the fact cannot be used to recover an age the
--- dimension deliberately hides.
+-- allowed: uncovered_amount, duration_minutes, length_of_stay_days,
+-- patient_age_years, and condition_count. patient_age_years is capped at 90 to
+-- match the Safe Harbor rule dim_patient applies, so the fact cannot be used to
+-- recover an age the dimension deliberately hides.
 
 with encounters as (
 
@@ -53,6 +53,21 @@ joined as (
         e.started_at,
         e.stopped_at,
         date_diff('minute', e.started_at, e.stopped_at)                 as duration_minutes,
+
+        -- Length of stay, inpatient only, counted in midnights: the discharge
+        -- date less the admission date, which is the number a hospital
+        -- reports. It is not duration_minutes rescaled; the two disagree on
+        -- 158 of the 1,728 inpatient encounters, because a stay is counted in
+        -- nights rather than in elapsed hours. Null on every other class,
+        -- where the measure has no meaning, and
+        -- tests/assert_length_of_stay_is_inpatient_only.sql asserts that.
+        -- No coalesce guards a missing discharge: stopped_at is not_null in
+        -- staging and here, so a feed that ever carried an open stay would
+        -- fail that test rather than quietly measure the stay as zero.
+        case
+            when e.encounter_class = 'inpatient'
+                then date_diff('day', cast(e.started_at as date), cast(e.stopped_at as date))
+        end                                                             as length_of_stay_days,
 
         -- age at the encounter, capped at 90 to match dim_patient
         case

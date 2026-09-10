@@ -2,11 +2,13 @@
 -- patient's recorded death date. It does here, on 165 of 61,459 encounters
 -- across 154 patients, by one to fourteen days. That is a Synthea
 -- generation artifact, not something this project can fix upstream, and
--- nothing filters it out. The test is set to warn so the build stays honest:
--- the number is reported on every run rather than hidden, and it turns into a
--- failure the moment it grows.
--- Returns the offending rows; the test warns when it returns any.
-{{ config(severity = 'warn') }}
+-- nothing filters it out. The test warns so the build stays honest: the number
+-- is reported on every run rather than hidden. The tolerated count is pinned at
+-- the 165 that exist today, so the test warns at 165 and errors at 166, which
+-- is what makes growth a failure rather than a louder warning. A bare severity
+-- of warn warns at any count and would not; docs/DECISIONS.md section 26.
+-- Returns the offending rows; the test warns at 165 and fails above it.
+{{ config(severity = 'error', warn_if = '> 0', error_if = '> 165') }}
 
 select
     e.encounter_id,

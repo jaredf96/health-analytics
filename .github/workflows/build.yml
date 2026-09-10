@@ -47,9 +47,11 @@ jobs:
       - name: Fetch the Synthea CSVs
         run: python scripts/fetch_synthea.py
 
-      # One warning is expected and correct, the post-death encounter test in
-      # docs/DECISIONS.md section 15. dbt exits 0 on a warning and non-zero on
-      # an error, so a real regression fails this step.
+      # Two warnings are expected and correct: the post-death encounter test in
+      # docs/DECISIONS.md section 15, and the inpatient length-of-stay
+      # plausibility test in section 25. Both pin the count they tolerate and
+      # error above it, section 26, so a growing defect fails this step rather
+      # than warning louder. dbt exits 0 on a warning and non-zero on an error.
       - name: Build and test
         run: dbt build --no-partial-parse
 

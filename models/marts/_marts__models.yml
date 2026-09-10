@@ -532,7 +532,9 @@ models:
       tests/assert_encounter_fact_matches_staging_grain.sql asserts it. Every
       foreign key resolves to its dimension. The measures added here are the
       ones staging is not allowed to derive: uncovered_amount,
-      duration_minutes, patient_age_years and condition_count.
+      duration_minutes, length_of_stay_days, patient_age_years and
+      condition_count. length_of_stay_days is the only nullable measure, by
+      design: it is an inpatient count and null on every other class.
       patient_age_years is capped at 90 to match the category dim_patient
       aggregates into, and dim_patient withholds the birth year for that
       cohort, so joining the two back together cannot recover an age either
@@ -622,6 +624,24 @@ models:
           artifact rather than a data error, so nothing filters them.
         data_tests:
           - not_null
+      - name: length_of_stay_days
+        description: >
+          Inpatient length of stay in midnights: the discharge date less the
+          admission date, which is the count a hospital reports. Populated on
+          the 1,728 inpatient encounters and null on the other 59,731, where a
+          length of stay has no meaning;
+          tests/assert_length_of_stay_is_inpatient_only.sql asserts that split.
+          It is not duration_minutes rescaled. The two disagree on 158 of the
+          1,728, because this counts nights and that counts elapsed time, and
+          docs/DECISIONS.md section 25 says why the conventions differ. Median
+          1, and 1,624 of the 1,728 are exactly 1. A same-day discharge would
+          be 0 nights; none occurs here. Four stays exceed 30 days and one runs
+          4,969, which
+          tests/assert_inpatient_length_of_stay_is_plausible.sql warns about
+          rather than filters, pinning the tolerated count at 1 so a second
+          such stay is an error. Nothing guards a missing discharge because
+          stopped_at is not_null, so an open stay fails that test first instead
+          of being measured as zero.
       - name: patient_age_years
         description: Completed years between birth and the encounter start, capped at 90. 1,901 encounters are capped.
         data_tests:

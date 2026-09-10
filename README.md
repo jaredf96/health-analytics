@@ -43,13 +43,13 @@ CI publishes that same site to GitHub Pages on every push to `main`.
 
 ## What the build produces
 
-15 models and 204 tests, in under two seconds on a laptop:
+15 models and 206 tests, in under two seconds on a laptop:
 
 ```
-Done. PASS=218 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=219
+Done. PASS=219 WARN=2 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=221
 ```
 
-The one warning is expected and is explained under Data quality below.
+Both warnings are expected and are explained under Data quality below.
 
 **Staging**, 6 models, one per source feed. Each renames the all-text CSV
 columns to snake_case and casts them, and does nothing else: no filtering, no
@@ -125,7 +125,7 @@ percent of them.
 
 ## Data quality
 
-204 tests: 190 generic and 14 singular.
+206 tests: 190 generic and 16 singular.
 
 The generic tests are 135 `not_null`, 21 `unique`, 19 `relationships` and 15
 `accepted_values`. The relationships tests are real assertions rather than
@@ -142,18 +142,26 @@ encounter reason arrives as a code and a label together or not at all. Neither
 fact filters, which is checked by comparing each one row for row against its
 staging model. The conditions feed has no key column, so one test asserts its
 grain in staging and a second asserts the fact preserved it. The two facts
-agree about which patient an encounter belongs to. And no combination of
+agree about which patient an encounter belongs to. Length of stay is
+populated on exactly the inpatient encounters and null everywhere else, so the
+scoping rule is an assertion rather than a convention. And no combination of
 columns in the marts recovers an age Safe Harbor hides, which is asserted
 against the data rather than against the column names.
 
-**One test warns, on purpose.** 165 of 61,459 encounters start after the
+**Two tests warn, on purpose.** 165 of 61,459 encounters start after the
 patient's recorded death date, one to fourteen days after, across 154
-patients. It is an artifact of how Synthea generates a population. Nothing in
-this project filters those rows out: dropping them would make the fact
-disagree with its source for a reason no reader could see. Instead the test
-asserts the rule at warn severity, so `dbt build` reports the count on every
-run, prices the defect at 0.27 percent of encounters, and turns it into a
-failure the moment it grows. See `docs/DECISIONS.md` section 15.
+patients. And 1 of the 1,728 inpatient stays runs 4,969 days, admitted 1996 and
+discharged 2010. Both are artifacts of how Synthea generates a population.
+Nothing in this project filters those rows out: dropping them would make the
+fact disagree with its source for a reason no reader could see. Instead each
+test reports its count on every run, pricing the first defect at 0.27 percent
+of encounters and the second at 1 stay in 1,728.
+
+Each test pins the count it tolerates and fails above it, `warn_if = '> 0'` with
+`error_if = '> 165'` and `> 1` respectively, so a 166th post-death encounter or
+a second year-long stay is an error and breaks CI. A bare `severity: warn` warns
+at any count and would not, which is what these tests carried until a review
+caught it. See `docs/DECISIONS.md` sections 15, 25 and 26.
 
 ## Governance
 

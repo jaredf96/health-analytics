@@ -28,8 +28,13 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   `DBT_PROFILES_DIR` to the repo root.
 - Run `dbt build --no-partial-parse` before committing yml changes, so
   deprecation warnings surface.
-- One warning is expected and correct: the post-death encounter test,
-  `docs/DECISIONS.md` section 15. A second warning is a regression.
+- Two warnings are expected and correct: the post-death encounter test,
+  `docs/DECISIONS.md` section 15, and the inpatient length-of-stay
+  plausibility test, section 25. A third warning is a regression.
+- Both pin the count they tolerate and error above it, so a growing defect
+  fails rather than warning louder. If you change one legitimately, move its
+  `error_if` bound in the same commit. Section 26 says why a bare
+  `severity: warn` is not enough.
 
 ## Layout
 
