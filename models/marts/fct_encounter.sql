@@ -20,6 +20,16 @@ patients as (
 
 ),
 
+-- Who the over-89 rule protects. Taken from dim_patient rather than recomputed,
+-- so the cohort the fact suppresses and the cohort the dimension aggregates are
+-- one definition and cannot drift apart. dim_patient reads only staging, so
+-- this ref is not a cycle.
+protected as (
+
+    select patient_id from {{ ref('dim_patient') }} where is_age_90_or_older
+
+),
+
 conditions_per_encounter as (
 
     select
@@ -69,11 +79,17 @@ joined as (
                 then date_diff('day', cast(e.started_at as date), cast(e.stopped_at as date))
         end                                                             as length_of_stay_days,
 
-        -- age at the encounter, capped at 90 to match dim_patient
+        -- Age at the encounter, withheld entirely for the patients the over-89
+        -- rule protects. A cap is not enough here: an exact age below 90 beside
+        -- an exact service date bounds the birth year, and a second published
+        -- date for the same patient turns that bound back into an age over 89,
+        -- without reading dim_patient at all. Stamping 90 on those rows is
+        -- worse than the cap rather than better, because a 90 against an
+        -- earlier date is a stronger anchor than the true age was.
+        -- docs/DECISIONS.md section 27.
         case
-            when {{ completed_years('p.birth_date', 'cast(e.started_at as date)') }} >= 90
-                then 90
-            else {{ completed_years('p.birth_date', 'cast(e.started_at as date)') }}
+            when pr.patient_id is null
+                then {{ completed_years('p.birth_date', 'cast(e.started_at as date)') }}
         end                                                             as patient_age_years,
 
         -- clinical volume
@@ -91,6 +107,8 @@ joined as (
     from encounters e
     inner join patients p
         on e.patient_id = p.patient_id
+    left join protected pr
+        on e.patient_id = pr.patient_id
     left join conditions_per_encounter c
         on e.encounter_id = c.encounter_id
 

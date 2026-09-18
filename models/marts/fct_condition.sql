@@ -31,6 +31,13 @@ patients as (
 
 ),
 
+-- The same cohort fct_encounter suppresses, from the same definition.
+protected as (
+
+    select patient_id from {{ ref('dim_patient') }} where is_age_90_or_older
+
+),
+
 encounters as (
 
     select encounter_id, started_at from {{ ref('stg_synthea__encounters') }}
@@ -60,14 +67,17 @@ joined as (
         -- interchangeable and this says by how much they differ.
         date_diff('day', cast(e.started_at as date), c.started_date)    as days_from_encounter_start,
 
-        -- age at onset, capped at 90 to match dim_patient
+        -- Age at onset, withheld for the protected cohort for the reason
+        -- fct_encounter gives: a cap leaves the exact ages below 90 in place,
+        -- and those are what bound a birth year. docs/DECISIONS.md section 27.
         case
-            when {{ completed_years('p.birth_date', 'c.started_date') }} >= 90
-                then 90
-            else {{ completed_years('p.birth_date', 'c.started_date') }}
+            when pr.patient_id is null
+                then {{ completed_years('p.birth_date', 'c.started_date') }}
         end                                                             as patient_age_years
 
     from conditions c
+    left join protected pr
+        on c.patient_id = pr.patient_id
     inner join patients p
         on c.patient_id = p.patient_id
     inner join encounters e

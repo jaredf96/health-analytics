@@ -830,3 +830,62 @@ The repository is public, and the claim was checkable and wrong.
 **What would reopen it.** A count that moves for a legitimate reason often
 enough that the bound becomes churn. That would mean the defect is not stable,
 which is itself the signal the test exists to give.
+
+## 27. A capped age is not a suppressed age
+
+**Decided 2026-09-18**, from a peer review of the Governance claims, confirmed
+against the built warehouse before anything was changed.
+
+Both facts published `patient_age_years` as the exact completed age whenever it
+was below 90, capped only at 90 or above. Section 12 treated that cap as the
+fact's half of the over-89 rule. It is not, and the gap is not subtle: an exact
+age beside an exact service date bounds a birth year, and any later published
+date for the same patient turns that bound back into an age.
+
+For patient `864b2fa0` an encounter at age 87 on 2013-12-25 puts the birth no
+later than 1926-12-25, and a published date of 2021-11-17 for the same patient
+yields a guaranteed 94. Across the cohort every one of the 35 protected patients
+was recoverable this way, to a maximum of 109. No dimension column is involved,
+so every defence sections 12, 19 and 22 describe was bypassed rather than
+broken. `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` could not see
+it: its cross-fact clause is gated on `birth_year is not null`, which selects
+exactly the patients who are not protected.
+
+**The fix is to withhold, not to cap harder.** Both facts now publish no age at
+all for the 35, taking the cohort from `dim_patient.is_age_90_or_older` rather
+than recomputing it, so the cohort the facts suppress and the cohort the
+dimension aggregates are one definition. `dim_patient` reads only staging, so a
+fact referencing it is not a cycle.
+
+Stamping 90 on those rows instead would have been worse than the cap it
+replaced. A 90 against a date when the patient was 87 is a stronger anchor than
+the true age was, because it moves the implied birth three years earlier. The
+maximum derivable age under that variant is 199, against 109 for the defect it
+was meant to fix. This was caught in review before it was written, and it is the
+reason this entry says withhold rather than cap.
+
+**What it does not fix, which is now stated rather than implied.** Ten of the 35
+have published events more than 89 years apart, the widest span 109 years, so
+the later event guarantees an age over 89 from the dates alone with no age
+column involved. The facts keep exact dates on purpose, section 19, so this is
+not closable without giving that up. No claim of the form "no combination of
+published columns recovers an age" is therefore available to this project, and
+the README and the portfolio site no longer make one. Safe Harbor is claimed for
+`dim_patient` and not for the marts, which is what section 19 already said and
+what now has to carry the weight alone.
+
+**Consequence.** `fct_encounter` publishes an age on 55,685 of 61,459 rows and
+`fct_condition` on 34,338 of 38,094; the highest published age in either is 88.
+Neither column is `not_null` any more, which is deliberate and is why both
+descriptions say so. Two tests replace the two dropped `not_null` tests:
+`assert_fact_age_and_date_do_not_imply_over_89.sql` does the attacker's
+arithmetic and asserts the result stays at or below 89, and
+`assert_fact_age_is_withheld_for_the_protected_cohort.sql` asserts the scoping
+rule for the reason section 25 gives, and additionally catches over-suppression,
+which the arithmetic test cannot see. Test counts are unchanged at 206, now 188
+generic and 18 singular.
+
+**What would reopen it.** Dropping exact dates from the facts, which would make
+the stronger claim available and is a different project. Or a mart that needs an
+age for a protected patient, which would have to take it as the aggregated
+category rather than as a number.

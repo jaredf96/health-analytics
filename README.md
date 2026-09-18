@@ -125,9 +125,9 @@ percent of them.
 
 ## Data quality
 
-206 tests: 190 generic and 16 singular.
+206 tests: 188 generic and 18 singular.
 
-The generic tests are 135 `not_null`, 21 `unique`, 19 `relationships` and 15
+The generic tests are 133 `not_null`, 21 `unique`, 19 `relationships` and 15
 `accepted_values`. The relationships tests are real assertions rather than
 aspirations: every foreign key in the project resolves with zero orphans, from
 encounters to patients, organizations, providers and payers, from conditions to
@@ -177,7 +177,11 @@ reveal such an age. So `dim_patient` withholds `birth_year` and `death_year`
 for those 35 patients rather than publishing them beside a capped age: keeping
 the years would let one subtraction undo the cap, and joining a birth year to
 a date on the fact would undo it for every encounter of that patient.
-`patient_age_years` is capped at 90 on both facts to match.
+`patient_age_years` is withheld entirely on both facts for those 35 patients,
+rather than capped. A cap is not enough: it leaves the exact ages below 90 in
+place, and an exact age beside an exact service date bounds a birth year that a
+later date turns back into an age. That recovered an age for all 35 of them,
+to a maximum of 109, until it was closed. `docs/DECISIONS.md` section 27.
 
 A second fact is where a rule like this usually breaks, because the suppression
 has to hold against dates the dimension has never seen. So it is computed from
@@ -206,7 +210,10 @@ knows column names. It could not see the age leak above, because `birth_year`
 was never on its list.
 `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data
 instead, and asserts that no birth year the dimension publishes, set beside any
-date either fact publishes, lands on an age the rule hides. A control that
+date either fact publishes, lands on an age the rule hides.
+`tests/assert_fact_age_and_date_do_not_imply_over_89.sql` does the arithmetic an
+attacker would do, taking each published age as a bound on a birth year and
+checking it against that patient's latest published date. A control that
 checks names is not a control that checks the rule.
 
 What that second test does not prove is worth saying plainly, because the

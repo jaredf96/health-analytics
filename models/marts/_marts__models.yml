@@ -435,8 +435,8 @@ models:
       diagnosis. 29,749 of these rows are SNOMED findings rather than
       disorders, and the most common code in the fact is Full-time employment;
       docs/DECISIONS.md section 23 has the numbers.
-      patient_age_years is capped at 90 to match the category dim_patient
-      aggregates into, for the same reason it is capped on fct_encounter.
+      patient_age_years is withheld entirely for the 35 patients the over-89
+      rule protects, for the same reason it is withheld on fct_encounter.
     columns:
       - name: patient_id
         description: Patient the condition belongs to. Part of the grain.
@@ -520,10 +520,12 @@ models:
           - not_null
       - name: patient_age_years
         description: >
-          Completed years between birth and the start of the condition, capped
-          at 90. 1,016 rows across 34 patients are capped.
-        data_tests:
-          - not_null
+          Completed years between birth and the start of the condition,
+          withheld for the 35 patients the over-89 rule protects. 34,338 of the
+          38,094 rows carry an age and 3,756 are null; the highest published is
+          88. Nullable on purpose, so there is no not_null test here: a capped
+          age would leave the exact ages below 90 in place, and those are what
+          bound a birth year. docs/DECISIONS.md section 27.
 
   - name: fct_encounter
     description: >
@@ -535,12 +537,13 @@ models:
       duration_minutes, length_of_stay_days, patient_age_years and
       condition_count. length_of_stay_days is the only nullable measure, by
       design: it is an inpatient count and null on every other class.
-      patient_age_years is capped at 90 to match the category dim_patient
-      aggregates into, and dim_patient withholds the birth year for that
-      cohort, so joining the two back together cannot recover an age either
-      one hides. The fact does keep exact service timestamps, which the
-      Safe Harbor rule on dim_patient does not extend to; docs/DECISIONS.md
-      section 19 says why and what it means.
+      patient_age_years is withheld entirely for the 35 patients the over-89
+      rule protects, rather than capped, because a cap leaves the exact ages
+      below 90 in place and those bound a birth year on their own;
+      docs/DECISIONS.md section 27. The fact does keep exact service
+      timestamps, which the Safe Harbor rule on dim_patient does not extend to;
+      section 19 says why and what it means, and the README says what that
+      still leaves derivable from the dates alone.
     columns:
       - name: encounter_id
         description: Synthea encounter UUID. Degenerate primary key.
@@ -643,9 +646,15 @@ models:
           stopped_at is not_null, so an open stay fails that test first instead
           of being measured as zero.
       - name: patient_age_years
-        description: Completed years between birth and the encounter start, capped at 90. 1,901 encounters are capped.
-        data_tests:
-          - not_null
+        description: >
+          Completed years between birth and the encounter start, withheld for
+          the 35 patients the over-89 rule protects. 55,685 of the 61,459 rows
+          carry an age and 5,774 are null; the highest published is 88.
+          Nullable on purpose, so there is no not_null test here.
+          tests/assert_fact_age_and_date_do_not_imply_over_89.sql asserts what
+          the suppression is for: no published age, set beside a later
+          published date for the same patient, implies an age over 89.
+          docs/DECISIONS.md section 27.
       - name: condition_count
         description: >
           Problem list entries recorded at this encounter, zero on 34,555 of
