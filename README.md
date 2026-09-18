@@ -188,9 +188,8 @@ encounters start and 168 end after the patient's recorded death, and a
 condition can outlive the visit that recorded it by weeks. The test that reads
 the data checks all of them, against the exact birth date in staging rather
 than against year arithmetic, which is ambiguous by a year in both directions.
-Widening the rule moved no patient into or out of the 90-or-older category, and
-the highest age any published column now yields is 89. `docs/DECISIONS.md`
-section 22.
+Widening the rule moved no patient into or out of the 90-or-older category.
+`docs/DECISIONS.md` section 22.
 
 The claim is scoped to one model. Both facts deliberately keep the dates of
 care, exact timestamps on `fct_encounter` and days on `fct_condition`, because
@@ -206,8 +205,18 @@ the lesson.
 knows column names. It could not see the age leak above, because `birth_year`
 was never on its list.
 `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data
-instead and asserts that no combination of columns recovers an age the rule
-hides. A control that checks names is not a control that checks the rule.
+instead, and asserts that no birth year the dimension publishes, set beside any
+date either fact publishes, lands on an age the rule hides. A control that
+checks names is not a control that checks the rule.
+
+What that second test does not prove is worth saying plainly, because the
+scoping above is what carries it rather than the test. The facts publish exact
+service dates, so a patient's own span of care can bound an age with no
+dimension column involved at all: 10 of the 35 have published events more than
+89 years apart, and the widest span is 109 years. No test here proves that no
+combination of published columns recovers a hidden age, and while the facts
+keep exact dates on purpose, none could. That is why Safe Harbor is claimed for
+`dim_patient` and is not claimed for the marts.
 
 Staging keeps the full record. Anything that genuinely needs a patient's exact
 date of birth joins the staging model and inherits the responsibility for
