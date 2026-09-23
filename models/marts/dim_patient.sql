@@ -1,24 +1,19 @@
--- Patient dimension, de-identified to the HIPAA Safe Harbor standard.
--- docs/DECISIONS.md sections 12, 19 and 22 record why and what it costs. In
--- short: names, street address, city, county, coordinates and full dates never
--- leave staging; dates are reduced to the year, ZIP to its first three digits
--- with the seventeen low-population prefixes zeroed, and everyone over 89 is
--- aggregated into a single category with the year elements that would reveal
--- the age removed. The data is synthetic, so nothing here protects a real
--- person; the point is that the rule is written down, applied in one place,
--- and enforced by tests that read the data rather than by trust.
+-- Patient dimension, with the HIPAA Safe Harbor rules for names, geography,
+-- dates and ages over 89 applied. docs/DECISIONS.md sections 12, 19 and 22
+-- record why and what it costs. In short: names, street address, city, county,
+-- coordinates and full dates never leave staging; dates are reduced to the
+-- year, ZIP to its first three digits with the seventeen low-population
+-- prefixes zeroed, and everyone over 89 is aggregated into a single category
+-- with the year elements that would reveal the age removed. It is not a Safe
+-- Harbor data set, because patient_id is the source system's own patient key,
+-- which the rule removes; section 28. The data is synthetic, so nothing here
+-- protects a real person; the point is that the rule is written down, applied
+-- in one place, and enforced by tests that read the data rather than by trust.
 
--- The seventeen three-digit ZIP prefixes HHS requires to be zeroed because
--- their population is 20,000 or fewer. None of them appear in this sample,
--- which is entirely Massachusetts (010 through 028), so the rule is inert
--- here. It is written anyway: a rule that only exists when it fires is not a
--- rule. The list derives from the census tabulation HHS published with the
--- guidance, and the regulation binds to current census data, so this is a
--- lookup that has to be maintained rather than a constant.
-{% set restricted_zip3 = [
-    '036', '059', '063', '102', '203', '556', '692', '790', '821',
-    '823', '830', '831', '878', '879', '884', '890', '893'
-] %}
+-- The ZIP prefixes HHS restricts come from macros/restricted_zip3_prefixes.sql,
+-- which says why the list is maintained rather than constant, so that this
+-- model and the test that checks it read one list.
+{% set restricted_zip3 = restricted_zip3_prefixes() %}
 
 with patients as (
 
@@ -124,7 +119,7 @@ attained as (
 
 ),
 
-deidentified as (
+generalized as (
 
     select
         patient_id,
@@ -179,4 +174,4 @@ deidentified as (
 
 )
 
-select * from deidentified
+select * from generalized

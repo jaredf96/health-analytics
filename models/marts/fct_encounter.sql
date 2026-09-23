@@ -7,7 +7,7 @@
 -- patient_age_years, and condition_count. patient_age_years is withheld, not
 -- capped, for the patients the over-89 rule in dim_patient protects, and the
 -- comment on the column says why. The fact keeps exact service timestamps, so
--- the Safe Harbor claim is made for dim_patient and not for this model.
+-- the project makes no Safe Harbor claim for this model.
 -- docs/DECISIONS.md sections 19 and 27.
 
 with encounters as (

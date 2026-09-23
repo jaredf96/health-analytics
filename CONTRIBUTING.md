@@ -42,7 +42,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   `_<source>__models.yml`, and one `stg_<source>__<entity>.sql` per entity.
 - `models/marts/`: `_marts__models.yml`, one `dim_<entity>.sql` per dimension
   and one `fct_<event>.sql` per fact. Marts are where derived columns and
-  business rules live, and where the Safe Harbor de-identification is applied.
+  business rules live, and where the Safe Harbor rules are applied.
 - `models/overview.md`: the landing page of the generated docs site, as the
   `__overview__` docs block. Keep counts out of it; no build checks them there.
 - `macros/`: shared SQL expressions, one macro per file. A rule two models
@@ -67,12 +67,15 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   10 and 21.
 - No model reads the clock. `current_date` and `now()` are banned, because
   every number the README states has to be reproducible from a `dbt build`.
-- `dim_patient` is de-identified to HIPAA Safe Harbor and two tests enforce
-  it, one on the column list and one on the data. Read `docs/DECISIONS.md`
-  sections 12, 19, 22 and 27 before adding a column to it or an age to a
-  fact. Section 19 is there because the first version of that rule did not
-  hold, and section 27 because the facts could go around it. A new fact that
-  publishes a date against `patient_id` has to be added to the
+- `dim_patient` applies the HIPAA Safe Harbor rules for names, geography,
+  dates and ages over 89, and three tests enforce them, one on the column list
+  and two on the data. It is not a Safe Harbor data set, because its key is
+  the source system's patient identifier, so do not describe it as one
+  anywhere. Read `docs/DECISIONS.md` sections 12, 19, 22, 27 and 28 before
+  adding a column to it or an age to a fact. Section 19 is there because the
+  first version of that rule did not hold, section 27 because the facts could
+  go around it, and section 28 because the claim never covered the key. A new
+  fact that publishes a date against `patient_id` has to be added to the
   `published_dates` union in `dim_patient`, to the clauses in
   `tests/assert_safe_harbor_age_over_89_is_suppressed.sql`, and to the
   `published_dates` union in

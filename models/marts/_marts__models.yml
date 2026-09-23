@@ -202,23 +202,32 @@ models:
 
   - name: dim_patient
     description: >
-      One row per patient, de-identified to the HIPAA Safe Harbor standard.
-      Names, street address, city, county, coordinates and full dates stay in
-      staging and never reach this model. Dates are reduced to the year, ZIP to
-      its first three digits with the seventeen low-population prefixes zeroed,
-      and everyone over 89 is aggregated into a single category with the year
-      elements that would reveal the age removed with them. The rule is scoped
-      to this model: fct_encounter deliberately keeps exact service timestamps,
-      so the marts layer as a whole is not a Safe Harbor data set and only this
-      dimension claims to be. The data is synthetic, so nothing here protects a
-      real person; the point is that the rule is written down, applied in one
-      place, and enforced by two tests rather than by trust.
-      assert_patient_dimension_excludes_direct_identifiers.sql guards the
-      column list and assert_safe_harbor_age_over_89_is_suppressed.sql checks
-      the data. docs/DECISIONS.md sections 12 and 19 record the trade.
+      One row per patient, with the HIPAA Safe Harbor rules for names,
+      geography, dates and ages over 89 applied. Names, street address, city,
+      county, coordinates and full dates stay in staging and never reach this
+      model. Dates are reduced to the year, ZIP to its first three digits with
+      the seventeen low-population prefixes zeroed, and everyone over 89 is
+      aggregated into a single category with the year elements that would
+      reveal the age removed with them. The rules are applied in this model
+      only: fct_encounter deliberately keeps exact service timestamps, so the
+      marts layer as a whole is not a Safe Harbor data set. Nor is this
+      dimension, because patient_id is the source system's own patient
+      identifier, which the rule removes; a real release would replace it with
+      a code assigned for that release. The data is synthetic, so nothing here
+      protects a real person; the point is that the rules are written down,
+      applied in one place, and enforced by three tests rather than by trust.
+      assert_patient_dimension_excludes_name_place_and_date_columns.sql guards
+      the column list, and assert_safe_harbor_age_over_89_is_suppressed.sql and
+      assert_patient_zip3_is_a_permitted_prefix.sql check the data.
+      docs/DECISIONS.md sections 12, 19 and 28 record the trade.
     columns:
       - name: patient_id
-        description: Synthea patient UUID. Primary key. Synthetic and internal to this dataset, not a real-world identifier.
+        description: >
+          Synthea patient UUID. Primary key. Synthetic, but it is the source
+          system's own patient identifier, carried by every feed that records
+          something about a patient, so Safe Harbor would remove it and it is
+          why this dimension is not claimed as a Safe Harbor data set.
+          docs/DECISIONS.md section 28.
         data_tests:
           - unique
           - not_null
@@ -274,6 +283,9 @@ models:
           First three digits of the ZIP, or 000 where the prefix is one of the
           seventeen HHS restricts. Null on 545 of 1,163 patients, because the
           feed carries no ZIP for them.
+          tests/assert_patient_zip3_is_a_permitted_prefix.sql asserts that
+          every published value is three digits and none is a restricted
+          prefix.
       - name: lifetime_healthcare_expenses
         description: Lifetime healthcare cost paid by the patient.
         data_tests:
@@ -488,8 +500,8 @@ models:
           timestamp, which is what the feed carries. Safe Harbor would not
           permit a full date tied to an individual, and this fact carries one
           for the same reason fct_encounter carries exact timestamps: the
-          claim is scoped to dim_patient and the marts layer as a whole is not
-          a Safe Harbor data set. docs/DECISIONS.md section 19.
+          marts layer is not a Safe Harbor data set and the project does not
+          claim it is. docs/DECISIONS.md section 19.
         data_tests:
           - not_null
       - name: stopped_date

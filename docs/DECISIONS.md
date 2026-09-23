@@ -1,8 +1,10 @@
 # Decisions
 
 Why the project is shaped the way it is. One entry per decision, newest at the
-bottom. Each entry says what was decided, what it was decided against, and what
-would reopen it. Numbers come from the files and builds in this repo.
+bottom; an entry marked Recorded rather than Decided is a profile of the data
+that later decisions rest on. Most entries say what was decided against or what
+would reopen it, and some say both. Numbers come from the files and builds in
+this repo.
 
 ## 1. DuckDB for development and CI
 
@@ -254,6 +256,15 @@ organizations, so `dim_organization` keeps its full address and coordinates.
 Anything that genuinely needs a patient's full date or street joins the staging
 model and inherits the responsibility for doing so.
 
+**Amended 2026-09-23.** The heading and the scope above claim `dim_patient` as a
+Safe Harbor data set, and it was not one when they were written. Its key,
+`patient_id`, is the source system's own patient identifier, which the rule
+removes. The dimension applies the rules for names, geography, dates and ages
+over 89, and that is what the project claims now. The test named above is now
+`tests/assert_patient_dimension_excludes_name_place_and_date_columns.sql`, for
+what it checks. Section 28 records why the key stays and why the test was
+renamed.
+
 **What would reopen it.** A mart that needs finer geography or exact ages. The
 path is a second, explicitly restricted patient dimension, not loosening this
 one.
@@ -280,6 +291,10 @@ problem a surrogate key exists to solve, and that is when to add one.
 something other than a UUID, on the SNOMED CT code, for the same reason
 `dim_encounter_type` is. `fct_condition` has no key column at all, and section
 21 records why none was invented for it.
+
+**Extended 2026-09-23.** Keying `dim_patient` on the source system's patient
+identifier is also why it applies Safe Harbor's rules without being a Safe
+Harbor data set. Section 28 records that consequence and why the key stays.
 
 ## 14. Nothing reads the clock
 
@@ -467,6 +482,14 @@ them and the claim is scoped: `dim_patient` is a Safe Harbor data set, the
 marts layer is not, and the README, the model description and this log all now
 say so. The previous wording, that full dates never reach the mart, was not
 true of the layer.
+
+**Amended 2026-09-23.** "`dim_patient` is a Safe Harbor data set", above, was
+not true when it was written, because the dimension's key is the source
+system's own patient identifier. The scoping argument stands and the claim is
+narrower than it said: the dimension applies Safe Harbor's rules and is not a
+Safe Harbor data set either. The column test named above is now
+`assert_patient_dimension_excludes_name_place_and_date_columns.sql`. Section
+28.
 
 **What would reopen it.** A requirement that the whole layer be releasable
 under Safe Harbor. The path then is a separate, date-shifted fact, not
@@ -910,7 +933,86 @@ did not reach, beside two fact model comments that still called the age capped
 at 90. All three were corrected on this date, and section 22 carries its own
 amendment for the same claim.
 
+**Amended again 2026-09-23.** "Safe Harbor is claimed for `dim_patient` and not
+for the marts", above, now claims less. The dimension's key is the source
+system's own patient identifier, so it is not a Safe Harbor data set either,
+and the project claims the rules it applies rather than the data set. Section
+28.
+
 **What would reopen it.** Dropping exact dates from the facts, which would make
 the stronger claim available and is a different project. Or a mart that needs an
 age for a protected patient, which would have to take it as the aggregated
 category rather than as a number.
+
+## 28. A source system key is not a re-identification code
+
+**Decided 2026-09-23**, found while rewording how the project describes its
+Safe Harbor work, and confirmed in review before anything was changed.
+
+`dim_patient` has been keyed on `patient_id` since the first release. It is the
+Synthea patient `Id`: the key of the patient feed, the foreign key in every
+feed that records something about a patient, the key of `stg_synthea__patients`
+beside names and exact birth dates, and the foreign key both facts carry.
+Section 12 claimed the dimension as a Safe Harbor data set, and no entry in this
+log examined its key under that rule. Section 13 chose the key for joins, and
+the column description called it synthetic and internal to the dataset rather
+than asking what the rule makes of it.
+
+The rule makes it an identifier. 45 CFR 164.514(b)(2)(i)(R) removes any other
+unique identifying number, characteristic or code. The exception in
+164.514(c) is a re-identification code, and it holds only when the code is not
+derived from or related to information about the individual, cannot otherwise
+be translated to identify them, is not used or disclosed for any other purpose,
+and the mechanism for re-identification is not disclosed. A random UUID is
+derived from nothing about the patient. It still fails the third condition,
+because a source system's patient key is used for everything that system does.
+So `dim_patient` is not a Safe Harbor data set while it carries that key, and
+it was not one when section 12 said it was.
+
+**What is claimed now.** `dim_patient` applies Safe Harbor's rules for names,
+geography, dates and ages over 89, and three tests enforce them, one on the
+column list and two on the data. That is what this project can show, and it is
+what the README, the model description, CONTRIBUTING and the test comments now
+say. Section 19 withheld the claim from the marts because the facts keep exact
+dates, and this section withholds it from the dimension because of its key.
+The data is synthetic and holds no PHI, so nothing here is de-identified under
+HIPAA in the literal sense. The transformations and the tests that hold them
+are the deliverable, which is what section 12 said from the start.
+
+**Against: replacing the key.** A study key in the marts, with the crosswalk
+kept out of anything published, is how a real release is built, and it was
+rejected here on cost rather than on possibility. A hash of the UUID can be
+recomputed by anyone who holds staging, so it can be translated, and a
+crosswalk checked in as a seed publishes the mechanism 164.514(c) says must not
+be disclosed. What would qualify is a code drawn at random, either at build
+time into a model nothing publishes, which gives every patient a different key
+on every build, or once and stored outside the repository, which leaves a
+fresh clone unable to build the marts. Either way every patient join in the
+star is re-keyed, against section 13, to keep a sentence true rather than to
+answer anything the marts are for.
+
+**Against: a separate release model.** A model without `patient_id`, joined to
+nothing, would carry the full claim. It would also be the only model in the
+project that no question reads, built to hold a claim rather than to answer
+one.
+
+**Consequence.** No column changes and no number about the data moves. The
+claim narrows on every surface that stated it, sections 12, 19 and 27 carry
+dated amendments that point here, section 13 carries an extension, and the
+description of `patient_id` says what the key is.
+
+Review of the narrowed claim found two places where it still said more than the
+tests show, and both are fixed rather than reworded. The column test was named
+for direct identifiers while the dimension keeps one, so it is renamed for what
+it checks, `assert_patient_dimension_excludes_name_place_and_date_columns.sql`.
+And the geography rule was claimed as tested when nothing read `zip3`: the
+column test would pass a full ZIP published under that name.
+`tests/assert_patient_zip3_is_a_permitted_prefix.sql` now asserts that every
+published value is three digits and none is a prefix HHS restricts. It reads
+the list from `macros/restricted_zip3_prefixes.sql`, as the model does, so the
+two cannot disagree about it. Published as a full ZIP, the column would fail it
+on all 618 patients who have one. 207 tests, 19 of them singular.
+
+**What would reopen it.** A requirement to publish a Safe Harbor release of this
+data. The path then is a release model or pipeline that assigns its own code
+and keeps the crosswalk out of the published repository, not a re-keyed star.

@@ -46,10 +46,10 @@ CI publishes that same site to GitHub Pages on every push to `main`.
 
 ## What the build produces
 
-15 models and 206 tests, in under two seconds on a laptop:
+15 models and 207 tests, in under two seconds on a laptop:
 
 ```
-Done. PASS=219 WARN=2 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=221
+Done. PASS=220 WARN=2 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=222
 ```
 
 Both warnings are expected and are explained under Data quality below.
@@ -128,7 +128,7 @@ percent of them.
 
 ## Data quality
 
-206 tests: 188 generic and 18 singular.
+207 tests: 188 generic and 19 singular.
 
 The generic tests are 133 `not_null`, 21 `unique`, 19 `relationships` and 15
 `accepted_values`. The relationships tests are real assertions rather than
@@ -147,11 +147,12 @@ staging model. The conditions feed has no key column, so one test asserts its
 grain in staging and a second asserts the fact preserved it. The two facts
 agree about which patient an encounter belongs to. Length of stay is
 populated on exactly the inpatient encounters and null everywhere else, so the
-scoping rule is an assertion rather than a convention. And neither a birth year
-the dimension publishes nor an age either fact publishes, set beside a date the
-facts publish, reveals an age Safe Harbor hides. That is asserted against the
-data rather than against the column names, and Governance below says what it
-leaves open.
+scoping rule is an assertion rather than a convention. A published ZIP prefix
+is three digits and never one of the prefixes HHS restricts. And neither a
+birth year the dimension publishes nor an age either fact publishes, set beside
+a date the facts publish, reveals an age Safe Harbor hides. That is asserted
+against the data rather than against the column names, and Governance below
+says what it leaves open.
 
 **Two tests warn, on purpose.** 165 of 61,459 encounters start after the
 patient's recorded death date, one to fourteen days after, across 154
@@ -170,10 +171,11 @@ caught it. See `docs/DECISIONS.md` sections 15, 25 and 26.
 
 ## Governance
 
-`dim_patient` is de-identified to the HIPAA Safe Harbor standard. Names,
-street address, city, county, coordinates and full dates stay in staging and
-never reach it. Dates become years, and ZIP becomes its first three digits
-with the seventeen prefixes HHS restricts replaced by `000`.
+`dim_patient` applies the HIPAA Safe Harbor rules for names, geography, dates
+and ages over 89. Names, street address, city, county, coordinates and full
+dates stay in staging and never reach it. Dates become years, and ZIP becomes
+its first three digits with the seventeen prefixes HHS restricts replaced by
+`000`.
 
 Ages over 89 are the part worth reading closely, because capping the age
 column is not enough on its own. Safe Harbor aggregates everyone over 89 into
@@ -200,23 +202,34 @@ than against year arithmetic, which is ambiguous by a year in both directions.
 Widening the rule moved no patient into or out of the 90-or-older category.
 `docs/DECISIONS.md` section 22.
 
-The claim is scoped to one model. Both facts deliberately keep the dates of
-care, exact timestamps on `fct_encounter` and days on `fct_condition`, because
-a fact that cannot say when something happened is not much of a fact. The marts
-layer as a whole is therefore not a Safe Harbor data set, and only `dim_patient`
-claims to be.
+The claim is scoped to one model, and to the rules it applies rather than to a
+Safe Harbor data set. Both facts deliberately keep the dates of care, exact
+timestamps on `fct_encounter` and days on `fct_condition`, because a fact that
+cannot say when something happened is not much of a fact, so the marts layer as
+a whole is not a Safe Harbor data set. Nor is `dim_patient` on its own. Its key,
+`patient_id`, is the source system's own patient identifier, which every feed
+about a patient carries, and Safe Harbor removes any unique identifying number
+other than a re-identification code that is used for nothing else. A real
+release would replace it with a code assigned for that release and keep the
+crosswalk out of anything it publishes. Doing that here would re-key every
+patient join, and either give each patient a new key on every build or leave a
+fresh clone unable to build the marts, so the project keeps the natural key
+and narrows the claim instead. `docs/DECISIONS.md` section 28.
 
 The data is synthetic, so this protects nobody. That is the point: the rule is
-the deliverable. Two tests enforce it on `dim_patient`, and the distinction
-between them is the lesson.
-`tests/assert_patient_dimension_excludes_direct_identifiers.sql` reads
+the deliverable. Three tests enforce it on `dim_patient`, and the distinction
+between the first two is the lesson.
+`tests/assert_patient_dimension_excludes_name_place_and_date_columns.sql` reads
 `information_schema` and fails if a forbidden column reappears, but it only
 knows column names. It could not see the age leak above, because `birth_year`
 was never on its list.
 `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data
 instead, and asserts that no birth year the dimension publishes, set beside any
 date either fact publishes, lands on an age the rule hides. A control that
-checks names is not a control that checks the rule.
+checks names is not a control that checks the rule. The third,
+`tests/assert_patient_zip3_is_a_permitted_prefix.sql`, reads the data for the
+geography rule for the same reason: a full ZIP published under the name `zip3`
+would pass the column test.
 
 The ages on the facts need a test of their own, because an age beside a date
 bounds a birth year with no dimension column involved.
@@ -230,8 +243,8 @@ exact service dates, so a patient's own span of care can bound an age with no
 dimension column involved at all: 10 of the 35 have published events more than
 89 years apart, and the widest span is 108 years. No test here proves that no
 combination of published columns recovers a hidden age, and while the facts
-keep exact dates on purpose, none could. That is why Safe Harbor is claimed for
-`dim_patient` and is not claimed for the marts.
+keep exact dates on purpose, none could. That is why the claim is made for the
+rules `dim_patient` applies and not for the marts.
 
 Staging keeps the full record. Anything that genuinely needs a patient's exact
 date of birth joins the staging model and inherits the responsibility for
