@@ -1,5 +1,7 @@
+# A dbt project over synthetic Synthea EHR data, by Jared Fulk
+# (https://github.com/jaredf96). Released under the MIT License; see LICENSE.
+
 name: 'health_analytics'
-version: '1.0.0'
 profile: 'health_analytics'
 
 model-paths: ["models"]

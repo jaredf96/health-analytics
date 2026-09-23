@@ -43,6 +43,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 - `models/marts/`: `_marts__models.yml`, one `dim_<entity>.sql` per dimension
   and one `fct_<event>.sql` per fact. Marts are where derived columns and
   business rules live, and where the Safe Harbor de-identification is applied.
+- `models/overview.md`: the landing page of the generated docs site, as the
+  `__overview__` docs block. Keep counts out of it; no build checks them there.
 - `macros/`: shared SQL expressions, one macro per file. A rule two models
   need lives here rather than in both.
 - `tests/`: singular tests, one assertion per file, named `assert_<what>.sql`.

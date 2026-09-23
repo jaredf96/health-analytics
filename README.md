@@ -1,5 +1,8 @@
 # health_analytics
 
+[![build](https://github.com/jaredf96/health-analytics/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/jaredf96/health-analytics/actions/workflows/build.yml?query=branch%3Amain)
+[![license](https://img.shields.io/github/license/jaredf96/health-analytics)](LICENSE)
+
 A dbt project over synthetic electronic health record data: staged source
 feeds, a dimensional model, a data-quality test suite, generated
 documentation, and CI that runs the whole thing on every push to `main`
@@ -239,6 +242,7 @@ doing so.
 ```
 models/staging/synthea/   one stg_synthea__<entity>.sql per source feed
 models/marts/             dim_<entity>.sql and fct_<event>.sql
+models/overview.md        the landing page of the generated docs site
 macros/                   shared SQL expressions, one macro per file
 tests/                    singular tests, one assertion per file
 scripts/fetch_synthea.py  checksum-pinned data fetch, standard library only
@@ -267,3 +271,8 @@ marts key on natural identifiers, why the second fact conforms to the first
 one's dimensions instead of keying itself, why nothing reads the clock, and why
 a known defect is warned rather than filtered. Read it before changing the
 materialization, the sources, the dataset, or the identifier policy.
+
+## Author
+
+Jared Fulk, [@jaredf96](https://github.com/jaredf96). Released under the
+[MIT License](LICENSE).
