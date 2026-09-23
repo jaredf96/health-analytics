@@ -628,6 +628,21 @@ third fact that publishes a date against `patient_id` has to be added to the
 will complain about the omission unless the new dates actually cross a
 birthday, which is why this entry says so plainly.
 
+**Amended 2026-09-23.** "The highest age any combination of published columns
+yields is 89", under What it changed in the output, was not true when it was
+written. It held for a published birth year set beside a published date, which
+is what this section examined. It did not hold for the facts, which published
+an exact age below 90 beside exact dates: an age at one date bounds a birth
+year and a later date turns the bound back into an age, which recovered an age
+over 89 for all 35 patients, up to 109. Nor did it hold for the dates alone,
+which put 10 of the 35 over 89 by their span. Section 27 closes the first path
+and records why the second cannot be closed, and the project no longer makes a
+claim of that form. Section 27 also adds a third place a new fact's dates have
+to go, the `published_dates` union in
+`assert_fact_age_and_date_do_not_imply_over_89.sql`, and a fact that publishes
+an age has to join `published_ages` there and `fact_rows` in
+`assert_fact_age_is_withheld_for_the_protected_cohort.sql`.
+
 ## 23. A condition row is not a diagnosis
 
 **Recorded 2026-09-04**, from profiling the feed before the fact was written.
@@ -884,6 +899,16 @@ arithmetic and asserts the result stays at or below 89, and
 rule for the reason section 25 gives, and additionally catches over-suppression,
 which the arithmetic test cannot see. Test counts are unchanged at 206, now 188
 generic and 18 singular.
+
+**Amended 2026-09-23.** Two statements above were wrong. The widest span is 108
+years, not 109: its dates are 1912-09-26 and 2021-06-25, 108 completed years
+apart, and 109 was the count of calendar-year boundaries between them, which
+section 18 rejects as an age. The later date still guarantees an age over 89, so
+the conclusion stands. And the README did still make a claim of the "no
+combination" form, in one sentence of its Data quality section that this change
+did not reach, beside two fact model comments that still called the age capped
+at 90. All three were corrected on this date, and section 22 carries its own
+amendment for the same claim.
 
 **What would reopen it.** Dropping exact dates from the facts, which would make
 the stronger claim available and is a different project. Or a mart that needs an

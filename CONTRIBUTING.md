@@ -67,13 +67,19 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   every number the README states has to be reproducible from a `dbt build`.
 - `dim_patient` is de-identified to HIPAA Safe Harbor and two tests enforce
   it, one on the column list and one on the data. Read `docs/DECISIONS.md`
-  sections 12, 19 and 22 before adding a column to it. Section 19 is there
-  because the first version of that rule did not hold. A new fact that
+  sections 12, 19, 22 and 27 before adding a column to it or an age to a
+  fact. Section 19 is there because the first version of that rule did not
+  hold, and section 27 because the facts could go around it. A new fact that
   publishes a date against `patient_id` has to be added to the
-  `published_dates` union in `dim_patient` and to the clauses in
-  `tests/assert_safe_harbor_age_over_89_is_suppressed.sql`; the age
+  `published_dates` union in `dim_patient`, to the clauses in
+  `tests/assert_safe_harbor_age_over_89_is_suppressed.sql`, and to the
+  `published_dates` union in
+  `tests/assert_fact_age_and_date_do_not_imply_over_89.sql`; the age
   suppression is computed from every date the marts publish, not from the
-  encounter feed alone.
+  encounter feed alone. A fact that also publishes an age withholds it for
+  the patients `dim_patient.is_age_90_or_older` flags, and joins
+  `published_ages` in that test and `fact_rows` in
+  `tests/assert_fact_age_is_withheld_for_the_protected_cohort.sql`.
 - A column is named for what it measures, not for what it was meant to
   measure. `docs/DECISIONS.md` section 20 is a list of four times that went
   wrong here.

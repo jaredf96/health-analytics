@@ -14,10 +14,11 @@
 --
 -- Measures added here rather than in staging, where derived columns are not
 -- allowed: duration_days, is_open, days_from_encounter_start and
--- patient_age_years. patient_age_years is capped at 90 for the same reason it
--- is on fct_encounter: dim_patient aggregates ages over 89 into a single
--- category and withholds the year elements, and a second fact must not become
--- the way back to them. docs/DECISIONS.md sections 19 and 22.
+-- patient_age_years. patient_age_years is withheld for the same patients, and
+-- for the same reason, as on fct_encounter: dim_patient aggregates ages over 89
+-- into a single category and withholds the year elements, and an exact age
+-- beside an exact date is a way back to them. docs/DECISIONS.md sections 19, 22
+-- and 27.
 
 with conditions as (
 

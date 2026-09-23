@@ -76,17 +76,18 @@ where d.birth_year is not null
 
 union all
 
--- The cap itself, on both facts.
+-- An age over 89 on either fact. The facts withhold the protected cohort's age
+-- rather than capping it at 90, so no published age may exceed 89 at all.
 select
     patient_id,
-    'patient_age_years exceeds the cap'                 as violation
+    'patient_age_years over 89 on the encounter fact'   as violation
 from {{ ref('fct_encounter') }}
-where patient_age_years > 90
+where patient_age_years > 89
 
 union all
 
 select
     patient_id,
-    'condition patient_age_years exceeds the cap'       as violation
+    'patient_age_years over 89 on the condition fact'   as violation
 from {{ ref('fct_condition') }}
-where patient_age_years > 90
+where patient_age_years > 89

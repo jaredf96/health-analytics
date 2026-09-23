@@ -4,9 +4,11 @@
 --
 -- Measures added here rather than in staging, where derived columns are not
 -- allowed: uncovered_amount, duration_minutes, length_of_stay_days,
--- patient_age_years, and condition_count. patient_age_years is capped at 90 to
--- match the Safe Harbor rule dim_patient applies, so the fact cannot be used to
--- recover an age the dimension deliberately hides.
+-- patient_age_years, and condition_count. patient_age_years is withheld, not
+-- capped, for the patients the over-89 rule in dim_patient protects, and the
+-- comment on the column says why. The fact keeps exact service timestamps, so
+-- the Safe Harbor claim is made for dim_patient and not for this model.
+-- docs/DECISIONS.md sections 19 and 27.
 
 with encounters as (
 

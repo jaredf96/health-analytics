@@ -535,8 +535,8 @@ models:
       foreign key resolves to its dimension. The measures added here are the
       ones staging is not allowed to derive: uncovered_amount,
       duration_minutes, length_of_stay_days, patient_age_years and
-      condition_count. length_of_stay_days is the only nullable measure, by
-      design: it is an inpatient count and null on every other class.
+      condition_count. Two of them are nullable, by design.
+      length_of_stay_days is an inpatient count and null on every other class.
       patient_age_years is withheld entirely for the 35 patients the over-89
       rule protects, rather than capped, because a cap leaves the exact ages
       below 90 in place and those bound a birth year on their own;

@@ -144,9 +144,11 @@ staging model. The conditions feed has no key column, so one test asserts its
 grain in staging and a second asserts the fact preserved it. The two facts
 agree about which patient an encounter belongs to. Length of stay is
 populated on exactly the inpatient encounters and null everywhere else, so the
-scoping rule is an assertion rather than a convention. And no combination of
-columns in the marts recovers an age Safe Harbor hides, which is asserted
-against the data rather than against the column names.
+scoping rule is an assertion rather than a convention. And neither a birth year
+the dimension publishes nor an age either fact publishes, set beside a date the
+facts publish, reveals an age Safe Harbor hides. That is asserted against the
+data rather than against the column names, and Governance below says what it
+leaves open.
 
 **Two tests warn, on purpose.** 165 of 61,459 encounters start after the
 patient's recorded death date, one to fourteen days after, across 154
@@ -202,25 +204,28 @@ layer as a whole is therefore not a Safe Harbor data set, and only `dim_patient`
 claims to be.
 
 The data is synthetic, so this protects nobody. That is the point: the rule is
-the deliverable. Two tests enforce it, and the distinction between them is
-the lesson.
+the deliverable. Two tests enforce it on `dim_patient`, and the distinction
+between them is the lesson.
 `tests/assert_patient_dimension_excludes_direct_identifiers.sql` reads
 `information_schema` and fails if a forbidden column reappears, but it only
 knows column names. It could not see the age leak above, because `birth_year`
 was never on its list.
 `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` reads the data
 instead, and asserts that no birth year the dimension publishes, set beside any
-date either fact publishes, lands on an age the rule hides.
-`tests/assert_fact_age_and_date_do_not_imply_over_89.sql` does the arithmetic an
-attacker would do, taking each published age as a bound on a birth year and
-checking it against that patient's latest published date. A control that
+date either fact publishes, lands on an age the rule hides. A control that
 checks names is not a control that checks the rule.
 
-What that second test does not prove is worth saying plainly, because the
-scoping above is what carries it rather than the test. The facts publish exact
-service dates, so a patient's own span of care can bound an age with no
+The ages on the facts need a test of their own, because an age beside a date
+bounds a birth year with no dimension column involved.
+`tests/assert_fact_age_and_date_do_not_imply_over_89.sql` does the arithmetic an
+attacker would do, taking each published age as a bound on a birth year and
+checking it against that patient's latest published date.
+
+What the tests that read the data do not prove is worth saying plainly, because
+the scoping above is what carries it rather than any test. The facts publish
+exact service dates, so a patient's own span of care can bound an age with no
 dimension column involved at all: 10 of the 35 have published events more than
-89 years apart, and the widest span is 109 years. No test here proves that no
+89 years apart, and the widest span is 108 years. No test here proves that no
 combination of published columns recovers a hidden age, and while the facts
 keep exact dates on purpose, none could. That is why Safe Harbor is claimed for
 `dim_patient` and is not claimed for the marts.
