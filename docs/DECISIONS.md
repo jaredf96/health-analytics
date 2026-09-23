@@ -666,6 +666,21 @@ to go, the `published_dates` union in
 an age has to join `published_ages` there and `fact_rows` in
 `assert_fact_age_is_withheld_for_the_protected_cohort.sql`.
 
+**Amended again 2026-09-23.** "Asserts the same closure over the same five
+columns", above, was not true when it was written, and the claim that the test
+reads the exact birth date rather than the published year held for four of the
+five. The test checked the death date by subtracting the published years,
+`death_year - birth_year > 89`, which is the year arithmetic this section
+rejects. That clause could not pass a violation, because a completed age over
+89 always leaves the two years at least 90 apart. What it could do was fail a
+compliant patient. Someone who died at 89, before the birthday that would have
+made them 90, has a death year 90 after their birth year, and when no later
+published date reaches that birthday the dimension's rule publishes both. No
+such patient is in this sample, so the build never showed it. The death date
+now sits in the test's exact-date union beside the four fact columns, and the
+year clause is gone. 15 death dates put a patient over 89, and all 15 of those
+patients have their year elements withheld.
+
 ## 23. A condition row is not a diagnosis
 
 **Recorded 2026-09-04**, from profiling the feed before the fact was written.
@@ -938,6 +953,16 @@ for the marts", above, now claims less. The dimension's key is the source
 system's own patient identifier, so it is not a Safe Harbor data set either,
 and the project claims the rules it applies rather than the data set. Section
 28.
+
+**Extended 2026-09-23.** One capped age remains in the marts,
+`dim_patient.age_at_death_years`, which publishes 90 for the 15 patients who
+died at 90 or older. A cap is enough there for the reason it was not on the
+facts. An age bounds a birth year only against the date it was measured at, and
+for this column that date is the death, whose year the dimension withholds for
+everyone in the 90-or-older category. What the column lacked was a test:
+removing the cap would have published ages up to 103 with every test passing.
+`tests/assert_safe_harbor_age_over_89_is_suppressed.sql` now fails on any value
+over 90.
 
 **What would reopen it.** Dropping exact dates from the facts, which would make
 the stronger claim available and is a different project. Or a mart that needs an

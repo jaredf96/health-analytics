@@ -1,7 +1,7 @@
 -- Patient dimension, with the HIPAA Safe Harbor rules for names, geography,
 -- dates and ages over 89 applied. docs/DECISIONS.md sections 12, 19 and 22
 -- record why and what it costs. In short: names, street address, city, county,
--- coordinates and full dates never leave staging; dates are reduced to the
+-- coordinates and full dates never reach this model; dates are reduced to the
 -- year, ZIP to its first three digits with the seventeen low-population
 -- prefixes zeroed, and everyone over 89 is aggregated into a single category
 -- with the year elements that would reveal the age removed. It is not a Safe
@@ -145,7 +145,11 @@ generalized as (
         -- rather than sitting beside them.
         max_attained_age >= 90                              as is_age_90_or_older,
 
-        -- Age at death, capped at 90, null while the patient is alive.
+        -- Age at death, capped at 90, null while the patient is alive. 90 is
+        -- the aggregated category, and a cap is enough here where it was not
+        -- on the facts, because the date this age is measured at, the death,
+        -- has its year withheld for that whole category; docs/DECISIONS.md
+        -- section 27.
         case
             when death_date is null then null
             when {{ completed_years('birth_date', 'death_date') }} >= 90 then 90

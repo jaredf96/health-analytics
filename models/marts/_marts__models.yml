@@ -256,7 +256,13 @@ models:
         data_tests:
           - not_null
       - name: age_at_death_years
-        description: Completed years between birth and death, capped at 90; null while the patient is alive.
+        description: >
+          Completed years between birth and death, capped at 90; null while
+          the patient is alive. 90 is the aggregated category rather than an
+          age, on the 15 patients who died at 90 or older, and their death
+          year is withheld with it.
+          tests/assert_safe_harbor_age_over_89_is_suppressed.sql fails on any
+          value over 90. docs/DECISIONS.md section 27.
       - name: gender
         description: M or F.
         data_tests:

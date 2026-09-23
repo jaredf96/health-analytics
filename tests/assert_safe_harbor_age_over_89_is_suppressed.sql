@@ -8,10 +8,11 @@
 -- recover the age the cap was hiding, and joining that birth year to a date
 -- on a fact does the same for every row of that patient.
 --
--- The rule has to hold across every date the marts publish, on both facts and
--- on both ends of each period. This asserts it with the exact birth date from
--- staging rather than with year arithmetic on the mart. Year arithmetic is
--- ambiguous by a year in both directions, so a threshold loose enough to
+-- The rule has to hold across every date dim_patient computes it from: the
+-- death date, whose year the dimension publishes, and both ends of every
+-- period on both facts. This asserts it with the exact birth and death dates
+-- from staging rather than with year arithmetic on the mart. Year arithmetic
+-- is ambiguous by a year in both directions, so a threshold loose enough to
 -- avoid false positives is also loose enough to miss a real 90-year-old, and
 -- what the rule turns on is the patient's actual age, not what subtraction
 -- happens to yield. A test may read staging; the mart may not.
@@ -28,27 +29,38 @@ where is_age_90_or_older
 
 union all
 
--- Two year elements that subtract to an age the cap is supposed to hide.
+-- An age at death above the aggregated category. The dimension publishes 90
+-- for everyone who died at 90 or older, which is the category rather than an
+-- age, so no value may exceed 90. A cap is safe here where it was not on the
+-- facts because the date it is measured at, the death, has its year withheld
+-- for the whole category; docs/DECISIONS.md section 27.
 select
     patient_id,
-    'birth and death years imply an age over 89'        as violation
+    'age_at_death_years above the aggregated category'  as violation
 from {{ ref('dim_patient') }}
-where death_year - birth_year > 89
+where age_at_death_years > 90
 
 union all
 
--- A published birth year beside any date either fact publishes for that
--- patient, where the two together land on a completed age over 89. Every date
--- column of both facts is checked, because the latest one is not always the
--- one you would guess: dates after death exist here, encounters can end long
--- after they start, and a condition outlives the visit that recorded it.
+-- A published birth year beside any of those dates for that patient, where
+-- the two together land on a completed age over 89. The death date is one of
+-- them, compared by exact date like the rest. Every date column of both facts
+-- is checked as well, because the latest one is not always the one you would
+-- guess: dates after death exist here, encounters can end long after they
+-- start, and a condition outlives the visit that recorded it.
 select
     d.patient_id,
-    'a published fact date puts this patient over 89'   as violation
+    'a published date puts this patient over 89'        as violation
 from {{ ref('dim_patient') }} d
 inner join {{ ref('stg_synthea__patients') }} s
     on d.patient_id = s.patient_id
 inner join (
+
+    select patient_id, death_date               as published_date
+    from {{ ref('stg_synthea__patients') }}
+    where death_date is not null
+
+    union all
 
     select patient_id, cast(started_at as date) as published_date
     from {{ ref('fct_encounter') }}
