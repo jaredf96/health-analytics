@@ -337,6 +337,16 @@ success and errors as failure, so a genuine regression still breaks the build.
 moment it grows, was not enforced when it was written. Section 26 says what was
 wrong and what the test carries now.
 
+**Amended 2026-09-23.** The test named above is now
+`tests/assert_encounter_start_not_after_patient_death.sql`. Its old name said
+no encounter falls after the death, and what it asserts is the rule this
+section states, about the start. 168 encounters end after the death date, three
+more than start after it. Each of the three starts on or before the death date
+and ends on the next day by the UTC clock of the feed's timestamps, and on a New
+York clock all three end on the death date. The feed gives the death date no
+clock, so a rule on the end would test the clock rather than the generator. The
+bound stays at 165.
+
 **What would reopen it.** A mart whose question the defect actually distorts,
 such as a mortality or end-of-life measure. That mart excludes the rows itself
 and says so, rather than the fact excluding them for everybody.
@@ -837,6 +847,12 @@ more stays run between 57 and 335 days, which are long but not impossible, so
 the threshold sits at a year rather than at the point the data thins out. The
 test pins the tolerated count at 1 and errors above it, for the reason section
 26 gives.
+
+**Amended 2026-09-23.** The plausibility test compared the count with 365, which
+is not a calendar year. A stay of exactly one year that spans 29 February holds
+366 midnights and would have warned. The test now compares the discharge date
+with the admission date plus one calendar year, and selects the same single
+stay in this data.
 
 **What would reopen it.** A feed that distinguishes observation from inpatient,
 or one that carries a discharge disposition. Either would make the scoping rule

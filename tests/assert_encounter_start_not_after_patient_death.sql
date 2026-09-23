@@ -7,6 +7,14 @@
 -- the 165 that exist today, so the test warns at 165 and errors at 166, which
 -- is what makes growth a failure rather than a louder warning. A bare severity
 -- of warn warns at any count and would not; docs/DECISIONS.md section 26.
+--
+-- It compares the start of an encounter, not its end. 168 encounters end after
+-- the death date, three more than start after it, and each of those three
+-- starts on or before the death date and ends on the next day by the UTC clock
+-- the feed's timestamps use. On a New York clock all three end on the death
+-- date itself, which is where an encounter during which the patient died would
+-- end. The feed gives the death date no clock, so a rule on the end would test
+-- the clock rather than the generator.
 -- Returns the offending rows; the test warns at 165 and fails above it.
 {{ config(severity = 'error', warn_if = '> 0', error_if = '> 165') }}
 

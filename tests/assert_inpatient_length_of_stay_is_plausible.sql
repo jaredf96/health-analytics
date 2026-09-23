@@ -14,6 +14,10 @@
 -- section 26. The floor needs no assertion here;
 -- tests/assert_encounter_stop_not_before_start.sql already rules out a
 -- discharge before an admission, so the measure cannot go negative.
+--
+-- A calendar year is compared as dates one year apart, not as 365 nights,
+-- because a year that spans 29 February holds 366 of them and a stay of exactly
+-- one year would warn.
 -- Returns the offending rows; the test warns at 1 and fails above it.
 {{ config(severity = 'error', warn_if = '> 0', error_if = '> 1') }}
 
@@ -24,4 +28,5 @@ select
     stopped_at,
     length_of_stay_days
 from {{ ref('fct_encounter') }}
-where length_of_stay_days > 365
+where length_of_stay_days is not null
+  and cast(stopped_at as date) > cast(started_at as date) + interval 1 year
