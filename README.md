@@ -6,7 +6,7 @@
 A dbt project over synthetic electronic health record data: staged source
 feeds, a dimensional model, a data-quality test suite, generated
 documentation, and CI that runs the whole thing on every push to `main`
-and every pull request.
+and every pull request against it.
 
 The data is [Synthea](https://synthetichealth.github.io/synthea/), MITRE's
 synthetic patient generator. It is entirely artificial. There is no PHI here
@@ -33,8 +33,9 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 The fetch script downloads one checksum-pinned archive and lands 18 CSVs in
 `data/raw/synthea/` (about 565 MB, gitignored). dbt-duckdb reads them in
 place, so there is no load step and no credentials. Run dbt from the repo
-root, because `profiles.yml` is repo-local; from anywhere else set
-`DBT_PROFILES_DIR` to the repo root.
+root: dbt finds the project and the repo-local `profiles.yml` in the working
+directory, and the DuckDB file and the CSVs are paths relative to it, so
+setting `DBT_PROFILES_DIR` does not make another directory work.
 
 To read the generated documentation locally:
 
@@ -260,7 +261,7 @@ macros/                   shared SQL expressions, one macro per file
 tests/                    singular tests, one assertion per file
 scripts/fetch_synthea.py  checksum-pinned data fetch, standard library only
 docs/DECISIONS.md         why the project is shaped the way it is
-.github/workflows/        CI: dbt build on main and on every pull request
+.github/workflows/        CI: dbt build on main and on pull requests against it
 ```
 
 ## Warehouse

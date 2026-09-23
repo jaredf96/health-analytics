@@ -23,9 +23,11 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 - `scripts/fetch_synthea.py` lands 18 Synthea CSVs in `data/raw/synthea/`
   (gitignored, about 565 MB). Re-running is a no-op while every file is
   present at its recorded size; `--force` fetches again.
-- Run dbt from the repo root. `profiles.yml` is repo-local, and dbt finds it
-  only when launched from the directory that holds it. From anywhere else set
-  `DBT_PROFILES_DIR` to the repo root.
+- Run dbt from the repo root. dbt finds the project and the repo-local
+  `profiles.yml` in the working directory, and the profile's DuckDB path and
+  the sources' CSV paths are relative to it. `DBT_PROFILES_DIR` finds the
+  profile from elsewhere and nothing else, so it does not make another
+  directory work.
 - Run `dbt build --no-partial-parse` before committing yml changes, so
   deprecation warnings surface.
 - Two warnings are expected and correct: the post-death encounter test,

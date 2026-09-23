@@ -34,6 +34,16 @@ location-independent, and the README tells a reader to run from the root or set
 the same variable. A cloud target will read its credentials through
 `env_var()` in this same file.
 
+**Amended 2026-09-23.** The consequence above was wrong about the variable.
+`DBT_PROFILES_DIR` tells dbt where the profile is and nothing else. Run from
+another directory with it set, dbt stops because it finds no
+`dbt_project.yml`, and with `--project-dir` added it creates a DuckDB file in
+that directory and fails to read the source CSVs, because the database path in
+the profile and the sources' CSV paths are relative to the working directory.
+The README and CONTRIBUTING now say to run from the repo root, and CI no longer
+sets the variable. Every step already runs from the root, where dbt finds the
+profile unaided, so CI builds exactly as the README says.
+
 ## 3. Dataset: the Synthea nov2021 sample
 
 **Decided 2026-09-02.** The source data is
@@ -133,6 +143,22 @@ CSV triggers a refetch and a matching manifest makes re-runs a no-op.
 **Why.** A checksum mismatch and a truncated download are different problems
 and must be reported differently. Existing data must survive a failed run. CI
 must need nothing beyond Python.
+
+**Amended 2026-09-23.** The script did not do two things this section says it
+does. The swap deleted the old files before renaming the new ones into place,
+so a failure or an interruption between the two lost the data that must
+survive a failed run. The old files are now renamed aside and deleted only once
+the new ones and their manifest are renamed into place, which is the point the
+run commits. Before it a failure or a Ctrl-C puts the old files back, and a run
+killed between the two renames leaves them set aside for the next run to
+restore; after it only their removal remains. And the byte count was checked
+only against `Content-Length`, so a body cut short by a server that sends none
+passed as complete and was reported as a checksum mismatch, the problem this
+section says must be told apart from truncation. The archive's size is now
+pinned beside its hash, and without a `Content-Length` a body shorter than the
+pin is a short read and is retried, unless it has the pinned hash. An archive
+that matches the hash and not the size fails on the stale pin, so every
+download checks the two pins against each other.
 
 ## 8. Claims data profile
 

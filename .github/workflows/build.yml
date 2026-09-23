@@ -13,12 +13,9 @@ on:
 permissions:
   contents: read
 
-# profiles.yml is repo-local, and dbt only finds it when launched from the
-# directory that holds it. Setting this makes the invocation work from
-# anywhere in the job.
-env:
-  DBT_PROFILES_DIR: ${{ github.workspace }}
-
+# Every step runs from the repo root, as the README tells a reader to: dbt
+# finds the project and the repo-local profiles.yml in the working directory,
+# and the DuckDB file and the source CSVs are paths relative to it.
 jobs:
   build:
     runs-on: ubuntu-latest
