@@ -170,6 +170,12 @@ clock time, such as an hour-of-day admission pattern, has to convert
 explicitly and say which zone it converted to. The column descriptions say UTC
 so nobody has to infer it.
 
+**Amended 2026-09-23.** Two columns derived from these timestamps did not say
+so until this date. `fct_encounter.date_id` is the UTC day the encounter
+started and `fct_encounter.length_of_stay_days` counts UTC midnights, and
+neither description named a zone. Both do now. Section 25 says why the stay is
+counted in UTC rather than on a local clock.
+
 ## 10. The conditions grain is asserted, not keyed
 
 **Decided 2026-09-03.** `conditions.csv` has no key column. Staging does not
@@ -437,6 +443,16 @@ Safe Harbor permits, so nothing is disclosed that was hidden before. The old
 expression could only ever overstate an age, so it over-applied the cap and
 never under-applied it; `is_age_at_death_90_or_older` is true on the same 15
 patients either way, and section 12 is unaffected.
+
+**Extended 2026-09-23.** The same distinction held for
+`fct_encounter.duration_minutes`, which computed `date_diff('minute', start,
+stop)` under a description of completed minutes. That counts minute
+boundaries, so a visit from 10:00:50 to 10:01:10 read one minute where twenty
+seconds had passed, and 2,928 of the 61,459 rows read one minute over. It is
+now the whole minutes of elapsed time. The description's count of encounters
+that run an hour or less was a boundary count as well: its 58,112 included 12
+that ran past the hour. Measured on elapsed time it is 58,100, and no other
+number the project states moves.
 
 **What would reopen it.** A warehouse whose `date_diff` already means completed
 years. The macro would then be a wrapper over the native function rather than a
@@ -853,6 +869,16 @@ is not a calendar year. A stay of exactly one year that spans 29 February holds
 366 midnights and would have warned. The test now compares the discharge date
 with the admission date plus one calendar year, and selects the same single
 stay in this data.
+
+**Amended again 2026-09-23.** "The number a hospital reports", above, is a
+count of midnights on the hospital's own clock. This column counts them on the
+UTC clock of the feed's timestamps, which is the clock Synthea documents for
+them, and its description called it the count a hospital reports without
+naming a zone. It now says UTC and makes no claim to be a hospital's figure.
+Converting to a local clock was rejected. The generator does not model a clinic
+day, and wellness visits start in every hour of a New York day, so a local
+clock would claim a realism the timestamps do not have. On a New York clock 25
+of the 1,728 stays would count one midnight more or fewer.
 
 **What would reopen it.** A feed that distinguishes observation from inpatient,
 or one that carries a discharge disposition. Either would make the scoping rule

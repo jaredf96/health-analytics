@@ -94,7 +94,11 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   as a parsing error on the yml line, not as a YAML error, which sends you
   looking in the wrong place.
 - Column names are snake_case. Keys end in `_id`, dates in `_date`, timestamps
-  in `_at`. Money is `decimal(18, 2)`; coordinates are `double`; codes with
-  leading zeros (ZIP) stay text.
+  in `_at`. The exception is a key that is a SNOMED CT code:
+  `dim_encounter_type` and `dim_condition` key on `encounter_code` and
+  `condition_code`, and the facts' foreign keys keep those names, because the
+  value is a code in a published terminology and `_id` would read as a key the
+  feed assigned. Money is `decimal(18, 2)`; coordinates are `double`; codes
+  with leading zeros (ZIP) stay text.
 - Descriptions and comments state what the data is, not what is planned.
 - Writing style, everywhere in the repo: no em dashes or en dashes.

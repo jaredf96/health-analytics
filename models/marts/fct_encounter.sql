@@ -64,14 +64,18 @@ joined as (
         -- timing
         e.started_at,
         e.stopped_at,
-        date_diff('minute', e.started_at, e.stopped_at)                 as duration_minutes,
+        -- Completed minutes, the whole minutes of elapsed time.
+        -- date_diff('minute', ...) counts minute boundaries crossed instead,
+        -- which reads one over whenever the stop's seconds fall before the
+        -- start's; docs/DECISIONS.md section 18 is the same distinction for age.
+        date_diff('second', e.started_at, e.stopped_at) // 60           as duration_minutes,
 
-        -- Length of stay, inpatient only, counted in midnights: the discharge
-        -- date less the admission date, which is the number a hospital
-        -- reports. It is not duration_minutes rescaled; the two disagree on
-        -- 158 of the 1,728 inpatient encounters, because a stay is counted in
-        -- nights rather than in elapsed hours. Null on every other class,
-        -- where the measure has no meaning, and
+        -- Length of stay, inpatient only, counted in UTC midnights: the
+        -- discharge date less the admission date, both taken on the UTC clock
+        -- of the feed's timestamps. It is not duration_minutes rescaled; the
+        -- two disagree on 158 of the 1,728 inpatient encounters, because a
+        -- stay is counted in nights rather than in elapsed hours. Null on every
+        -- other class, where the measure has no meaning, and
         -- tests/assert_length_of_stay_is_inpatient_only.sql asserts that.
         -- No coalesce guards a missing discharge: stopped_at is not_null in
         -- staging and here, so a feed that ever carried an open stay would

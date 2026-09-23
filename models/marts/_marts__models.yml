@@ -112,9 +112,10 @@ models:
           - not_null
       - name: iso_year
         description: >
-          ISO 8601 week-numbering year. It differs from calendar_year at every
-          year boundary, which is why iso_week must never be grouped without
-          it.
+          ISO 8601 week-numbering year. It differs from calendar_year for one to
+          three days around each year boundary, except where 1 January is a
+          Monday, when the two agree on both sides. That difference is why
+          iso_week must never be grouped without it.
       - name: iso_year_week
         description: >
           iso_year and iso_week as one integer, YYYYWW. The key to group a
@@ -569,7 +570,10 @@ models:
           - unique
           - not_null
       - name: date_id
-        description: Day the encounter started, as YYYYMMDD.
+        description: >
+          Day the encounter started, as YYYYMMDD, taken on the UTC clock of
+          started_at. A report by local day converts started_at first;
+          docs/DECISIONS.md section 9.
         data_tests:
           - not_null
           - relationships:
@@ -640,15 +644,19 @@ models:
           - not_null
       - name: duration_minutes
         description: >
-          Completed minutes between start and end. 58,112 of 61,459 encounters
-          run an hour or less; three run longer than a year, which is a Synthea
-          artifact rather than a data error, so nothing filters them.
+          Completed minutes between start and end, the whole minutes of elapsed
+          time rather than the minute boundaries crossed. 58,100 of 61,459
+          encounters run an hour or less; three run longer than a year, which is
+          a Synthea artifact rather than a data error, so nothing filters them.
         data_tests:
           - not_null
       - name: length_of_stay_days
         description: >
-          Inpatient length of stay in midnights: the discharge date less the
-          admission date, which is the count a hospital reports. Populated on
+          Inpatient length of stay in UTC midnights: the discharge date less the
+          admission date, both taken on the UTC clock of the feed's timestamps.
+          A hospital counts midnights on its own local clock, so this is the
+          census convention applied in UTC rather than any hospital's figure;
+          docs/DECISIONS.md section 25 says why it stays in UTC. Populated on
           the 1,728 inpatient encounters and null on the other 59,731, where a
           length of stay has no meaning;
           tests/assert_length_of_stay_is_inpatient_only.sql asserts that split.

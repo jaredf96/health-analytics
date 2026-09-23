@@ -277,8 +277,8 @@ it, and not before.
 
 ## Decisions
 
-`docs/DECISIONS.md` records every decision behind the project, each with what
-it was decided against and what would reopen it: why this Synthea archive,
+`docs/DECISIONS.md` records the decisions behind the project, most with what
+they were decided against or what would reopen them: why this Synthea archive,
 why sources are read in place, why staging is materialized as tables, why the
 marts key on natural identifiers, why the second fact conforms to the first
 one's dimensions instead of keying itself, why nothing reads the clock, and why
