@@ -1,6 +1,7 @@
 # Builds the project the same way the README tells a reader to build it:
-# fetch the Synthea CSVs, then run dbt build. On a push to main it also
-# generates the dbt docs and publishes them to GitHub Pages.
+# fetch the Synthea CSVs, run dbt build, then run the analyses that reproduce
+# the decision log's profiles of feeds no model reads. On a push to main it
+# also generates the dbt docs and publishes them to GitHub Pages.
 name: build
 
 on:
@@ -51,6 +52,15 @@ jobs:
       # than warning louder. dbt exits 0 on a warning and non-zero on an error.
       - name: Build and test
         run: dbt build --no-partial-parse
+
+      # docs/DECISIONS.md sections 8 and 24 profile feeds no model reads, so no
+      # test covers them. These analyses reproduce the figures without
+      # asserting them, section 29. Running them here keeps them runnable, and
+      # their figures print in this log.
+      - name: Reproduce the source profiles
+        run: |
+          dbt show --select profile_claims --limit 50 --output json
+          dbt show --select profile_payer_transitions --limit 50 --output json
 
       - name: Generate the docs site
         if: github.event_name == 'push'

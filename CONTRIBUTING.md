@@ -7,8 +7,10 @@ How this project is put together, and the rules a change has to keep.
 A dbt analytics-engineering project over synthetic EHR data from Synthea. It
 demonstrates, with runnable evidence, the core of an analytics engineer's job
 in healthcare: staging raw feeds, dimensional models, data-quality tests,
-documentation, and CI. It runs on DuckDB. Every number stated in the README or
-the docs has to be reproducible from a `dbt build` of this repo.
+documentation, and CI. It runs on DuckDB. A number stated in the README or the
+docs is a query over the warehouse a `dbt build` of this repo produces, or over
+the source files it reads, unless it says where else it comes from, and then it
+has to say: `docs/DECISIONS.md` section 29.
 
 ## Run it
 
@@ -41,7 +43,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 ## Layout
 
 - `models/staging/<source>/`: `_<source>__sources.yml`,
-  `_<source>__models.yml`, and one `stg_<source>__<entity>.sql` per entity.
+  `_<source>__models.yml`, and one `stg_<source>__<entity>.sql` per entity
+  the marts read. A feed declared only to be profiled has no staging model.
 - `models/marts/`: `_marts__models.yml`, one `dim_<entity>.sql` per dimension
   and one `fct_<event>.sql` per fact. Marts are where derived columns and
   business rules live, and where the Safe Harbor rules are applied.
@@ -50,6 +53,10 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 - `macros/`: shared SQL expressions, one macro per file. A rule two models
   need lives here rather than in both.
 - `tests/`: singular tests, one assertion per file, named `assert_<what>.sql`.
+- `analyses/`: profiles of source feeds no model reads, which the decision log
+  cites. Each is run as `dbt show --select <name> --limit 50 --output json`,
+  asserts nothing, and runs in CI after the build so it stays runnable.
+  `docs/DECISIONS.md` section 29.
 - `scripts/`: data fetching. Standard library only, so CI needs nothing extra.
 - `docs/DECISIONS.md`: why things are the way they are. Read it before
   changing materialization, sources, the dataset, or the identifier policy.
@@ -58,7 +65,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - Sources are CSV files read in place by dbt-duckdb, every column as text.
   Staging does all renaming and casting and nothing else: no filtering, no
-  derived columns. Every cast in a staging model is deliberate.
+  derived columns. Every cast in a staging model is deliberate. An analysis
+  that reads a feed with no staging model casts what it needs itself.
 - Staging is materialized as tables on DuckDB. See `docs/DECISIONS.md`.
 - Marts key on the natural identifiers the feed supplies. Most are Synthea
   UUIDs; `dim_date` keys on `date_id`, the day as a `YYYYMMDD` integer, and
@@ -67,8 +75,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
   a singular test asserts it: `fct_condition` is keyed by `patient_id`,
   `encounter_id` and `condition_code` together. `docs/DECISIONS.md` sections
   10 and 21.
-- No model reads the clock. `current_date` and `now()` are banned, because
-  every number the README states has to be reproducible from a `dbt build`.
+- No model reads the clock. `current_date` and `now()` are banned, because a
+  `dbt build` has to produce the same numbers on any machine on any day.
 - `dim_patient` applies the HIPAA Safe Harbor rules for names, geography,
   dates and ages over 89, and three tests enforce them, one on the column list
   and two on the data. It is not a Safe Harbor data set, because its key is

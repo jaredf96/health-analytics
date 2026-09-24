@@ -3,8 +3,9 @@
 Why the project is shaped the way it is. One entry per decision, newest at the
 bottom; an entry marked Recorded rather than Decided is a profile of the data
 that later decisions rest on. Most entries say what was decided against or what
-would reopen it, and some say both. Numbers come from the files and builds in
-this repo.
+would reopen it, and some say both. A number here is a query over the warehouse
+a `dbt build` of this repo produces, or over the source files it reads, unless
+the entry says where else it comes from; section 29 has the rule.
 
 ## 1. DuckDB for development and CI
 
@@ -79,6 +80,14 @@ Generating a population locally with Synthea (Java) was rejected for now: it
 makes reproducibility depend on a pinned Synthea release and seed plus minutes
 of generation in CI.
 
+**Amended 2026-09-23.** The comparison above is a measurement taken on
+2026-09-02, and nothing in this repository repeats it: the fetch script pins
+only the chosen archive, and `latest` cannot be pinned at all. Of the row
+counts for the chosen archive, the claims and claim transaction counts are
+reproduced by `analyses/profile_claims.sql` and the encounter count by the
+build. The observation, imaging study and procedure counts were counted from
+the fetched files, and no command here counts them again. Section 29.
+
 **What would reopen it.** A need for more patients or the current schema. The
 path then is to generate once from a pinned Synthea release and seed, publish
 the archive as a checksum-pinned GitHub Release asset, and point the fetch
@@ -100,6 +109,11 @@ leading zeros into integers.
 floating-point noise (up to 18 decimals) and are cast to `decimal(18, 2)`,
 which DuckDB rounds to cents.
 
+**Extended 2026-09-23.** Three feeds are declared as sources with no staging
+model, `claims`, `claims_transactions` and `payer_transitions`, so that the
+analyses section 29 describes can read them. An analysis casts what it sums
+itself, and nothing in the marts reads these feeds.
+
 ## 5. Staging materialized as tables, not views
 
 **Decided 2026-09-02.** The `staging`
@@ -113,6 +127,19 @@ encounters today, and 310 MB for the claims transactions file the same archive
 ships. The persisted view also carries a relative path that only resolves when
 the database file is opened from the repo root. As tables, each CSV is parsed once per build, tests hit tables, and
 the database file is self-contained.
+
+**Amended 2026-09-23.** "Each CSV is parsed once per build", above, is not true
+of the six staged feeds. Each is parsed three times: once by its staging model
+and once by each of the two tests `_synthea__sources.yml` declares on its key
+columns, which read the source rather than the table. The argument stands,
+since that is two reads where views would have cost one for every test on the
+model, eight to twenty-four of them. The three feeds declared only to be
+profiled are not parsed by the build at all; section 29.
+
+**Extended 2026-09-23.** The two file sizes above are those of the CSVs the
+fetch script lands, which its manifest, `data/raw/synthea/.fetched`, records to
+the byte: 19,062,151 for encounters and 309,897,626 for claim transactions.
+Section 29.
 
 **What would reopen it.** A cloud target with loaded raw tables. At that point
 the config becomes target-conditional (tables on DuckDB, views elsewhere). It
@@ -179,6 +206,16 @@ Not a decision, but the facts the next decisions will rest on.
 - The sum of CHARGE lines does not reconcile to `encounters.TOTAL_CLAIM_COST`
   (206.9 million versus 255.0 million). No model may claim the two agree.
 
+**Amended 2026-09-23.** "There are several claims per encounter, split by claim
+type", above, is not what the feed holds. 34,588 of the 61,459 encounters have
+exactly one claim and the rest have up to 14, and every claim on an encounter
+carries the same primary claim type, `HEALTHCARECLAIMTYPEID1`, so they are not
+split by it. Only the secondary type, `HEALTHCARECLAIMTYPEID2`, ever differs
+within an encounter, on 2 of them. The rest of this profile holds as stated,
+the referring and supervising provider columns included, and
+`analyses/profile_claims.sql` reproduces all of it: `dbt show --select
+profile_claims --limit 50 --output json`. Section 29.
+
 ## 9. Encounter timestamps stay UTC
 
 **Decided 2026-09-03.** `encounters.START` and `STOP` arrive as ISO 8601 with
@@ -201,6 +238,12 @@ so until this date. `fct_encounter.date_id` is the UTC day the encounter
 started and `fct_encounter.length_of_stay_days` counts UTC midnights, and
 neither description named a zone. Both do now. Section 25 says why the stay is
 counted in UTC rather than on a local clock.
+
+**Amended again 2026-09-23.** "Every number this repo publishes has to be
+reproducible from a `dbt build`", above, promised more than a build can
+reproduce, and section 29 replaces it with a rule about provenance. The
+argument stands for what it protects: a machine-dependent cast would still make
+the numbers a build produces differ between a laptop and a CI runner.
 
 ## 10. The conditions grain is asserted, not keyed
 
@@ -345,6 +388,12 @@ impossible to distinguish from one that failed because of a change.
 `dim_patient.age_at_death_years`. A dashboard that wants a current age computes
 it at query time, where the reader can see the clock being read.
 
+**Amended 2026-09-23.** "Every number the README states", above, was never every
+number the README states: its fetch figures come from the fetch script and its
+build time from one laptop, and section 29 has the rule that replaced the
+promise. The argument stands for the numbers a build produces, which a model
+that read the clock would still change from one day to the next.
+
 ## 15. A known defect is warned, not filtered
 
 **Decided 2026-09-03.** 165 of 61,459 encounters start after the patient's
@@ -426,6 +475,11 @@ fact when the marts do arrive. It also materializes a 711,238-row and a
 531,144-row table that nothing reads yet, and it delays the layer that the
 whole project exists to show.
 
+**Extended 2026-09-23.** The two row counts under Against are section 3's. The
+711,238 claim transactions are reproduced by `analyses/profile_claims.sql`;
+the 531,144 observations were counted from the fetched files on 2026-09-02, and
+no command here counts them again. Section 29.
+
 **What would reopen it.** It is already reopened, in the ordinary way: the
 financial feeds and a second fact at the condition grain are the next
 candidates. This entry records why they were not first, not that they are
@@ -479,6 +533,12 @@ now the whole minutes of elapsed time. The description's count of encounters
 that run an hour or less was a boundary count as well: its 58,112 included 12
 that ran past the hour. Measured on elapsed time it is 58,100, and no other
 number the project states moves.
+
+**Amended 2026-09-23.** The Consequence above describes the fact before section
+27. `fct_encounter.patient_age_years` no longer reports 90 or 89 for anyone: it
+withholds the age entirely for the 35 patients the over-89 rule protects, and
+the highest age either fact publishes is 88. The 1,901 and the 160 are what this
+correction did to the capped column at the time.
 
 **What would reopen it.** A warehouse whose `date_diff` already means completed
 years. The macro would then be a wrapper over the native function rather than a
@@ -825,6 +885,11 @@ section 16 and section 23 again, a category the data cannot support. Synthea
 has one Medicare payer and no plan detail, so the value would be empty on every
 row.
 
+**Extended 2026-09-23.** The `payer_transitions` figures above are reproduced by
+`analyses/profile_payer_transitions.sql`, which reads the feed without staging
+it and classes each payer as `dim_payer` does: `dbt show --select
+profile_payer_transitions --limit 50 --output json`. Section 29.
+
 **What would reopen it.** A feed carrying the plan or the product, or a payer
 selling in more than one class. Either one moves financial class off the
 dimension and onto the encounter, because it would stop being an attribute of
@@ -905,6 +970,11 @@ Converting to a local clock was rejected. The generator does not model a clinic
 day, and wellness visits start in every hour of a New York day, so a local
 clock would claim a realism the timestamps do not have. On a New York clock 25
 of the 1,728 stays would count one midnight more or fewer.
+
+**Amended a third time 2026-09-23.** "One nullable measure in a fact where every
+other measure is `not_null`", above, stopped being true with section 27.
+`patient_age_years` is withheld for the 35 patients the over-89 rule protects,
+so the fact carries two nullable measures, each null for a stated reason.
 
 **What would reopen it.** A feed that distinguishes observation from inpatient,
 or one that carries a discharge disposition. Either would make the scoping rule
@@ -1032,6 +1102,13 @@ removing the cap would have published ages up to 103 with every test passing.
 `tests/assert_safe_harbor_age_over_89_is_suppressed.sql` now fails on any value
 over 90.
 
+**Amended a third time 2026-09-23.** "199", above, repeats the error the first
+amendment corrected. A 90 stamped on the earliest published date bounds the
+birth 90 years before it, and the widest span of published dates is 108
+completed years, so the maximum derivable age under that variant is 198. The
+comparison stands: against 109 for the defect, it is still the worse of the
+two.
+
 **What would reopen it.** Dropping exact dates from the facts, which would make
 the stronger claim available and is a different project. Or a mart that needs an
 age for a protected patient, which would have to take it as the aggregated
@@ -1109,3 +1186,52 @@ on all 618 patients who have one. 207 tests, 19 of them singular.
 **What would reopen it.** A requirement to publish a Safe Harbor release of this
 data. The path then is a release model or pipeline that assigns its own code
 and keeps the crosswalk out of the published repository, not a re-keyed star.
+
+## 29. A number says where it comes from
+
+**Decided 2026-09-23.** The README, CONTRIBUTING, the preamble of this log and
+its sections 9 and 14 promised that every number the project states is
+reproducible from a `dbt build`. Three entries could never meet that. Section 3
+compares four archives, three of which the fetch script has never known.
+Section 8 profiles the claims feeds and section 24 the payer transitions, and
+no model reads either. Two more cite figures no build produces: section 5 the
+sizes of two fetched files, and section 17 a row count from section 3. The
+README's figures for the fetch, 18 CSVs and about 565 MB, come from the fetch
+script, and its build time comes from one laptop.
+
+The promise is replaced by a rule about provenance. A number the project states
+is a query over the warehouse a `dbt build` produces, or over the source files
+it reads in place, unless it says where else it comes from, and then it has to
+say. A figure from the fetch names the fetch script. A timing names the kind of
+machine it was taken on. A profile of a feed no model reads names the `dbt show`
+command that reproduces it. A measurement nothing in this repository can repeat
+is dated and says so.
+
+`analyses/profile_claims.sql` reproduces section 8 and
+`analyses/profile_payer_transitions.sql` the figures in section 24, each run as
+`dbt show --select <name> --limit 50 --output json`. The feeds they read are
+declared as sources for that and staged nowhere. CI runs both after the build,
+so a change that breaks either one fails the run, and their figures print in
+its log. The first run of the claims analysis corrected section 8, whose
+amendment says how. Checking the figures the README and this log state against
+this rule and against the build found four more entries wrong or stale, each now
+amended: section 5 on how often a CSV is parsed, sections 18 and 25 on the ages
+section 27 later withheld, and section 27's own 199, which is 198.
+
+**Why analyses and not tests.** A test asserting the profile's figures would
+pass only while the feed stays what it was on the day it was measured, which
+makes it a change detector rather than a rule, and it would move the test count
+the README states without protecting anything the marts depend on. An analysis
+reproduces the figures without asserting them, and CI keeps it runnable.
+
+**Why not staging models.** Section 17 holds. A staging model is the first step
+of modeling a feed, and nothing models these three yet. A declared source costs
+nothing until something reads it.
+
+**Consequence.** Section 3's comparison stays what it always was, a measurement
+taken on 2026-09-02 that no command here repeats. The other three archives are
+not pinned, and one of them cannot be.
+
+**What would reopen it.** Modeling the claims or the payer transitions. Their
+profiles would then become staging models and tests, and these analyses would
+go.

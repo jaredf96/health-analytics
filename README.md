@@ -16,8 +16,11 @@ The generated documentation, model lineage and test coverage included, is
 published from this repository on every push to `main`:
 **https://jaredf96.github.io/health-analytics/**
 
-Every number below comes out of a `dbt build` of this repository. If a number
-here and the build ever disagree, the build is right and this file is a bug.
+Every figure below is a query over the warehouse a `dbt build` of this
+repository produces, unless it says where else it comes from, and if one ever
+disagrees with the build, the build is right and this file is a bug. The fetch
+figures under Run it are the fetch script's, and the build time is one
+laptop's. `docs/DECISIONS.md` section 29 has the rule.
 
 ## Run it
 
@@ -45,9 +48,19 @@ To read the generated documentation locally:
 
 CI publishes that same site to GitHub Pages on every push to `main`.
 
+The decision log cites profiles of three feeds no model reads: the claims, the
+claim transactions and the payer transitions. Two analyses reproduce them, and
+CI runs both after every build:
+
+```bash
+.venv/bin/dbt show --select profile_claims --limit 50 --output json
+.venv/bin/dbt show --select profile_payer_transitions --limit 50 --output json
+```
+
 ## What the build produces
 
-15 models and 207 tests, in under two seconds on a laptop:
+15 models and 207 tests, which dbt reports running in under two seconds on a
+laptop:
 
 ```
 Done. PASS=220 WARN=2 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=222
@@ -55,10 +68,10 @@ Done. PASS=220 WARN=2 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=222
 
 Both warnings are expected and are explained under Data quality below.
 
-**Staging**, 6 models, one per source feed. Each renames the all-text CSV
-columns to snake_case and casts them, and does nothing else: no filtering, no
-derived columns. Patients, encounters, conditions, organizations, providers,
-payers.
+**Staging**, 6 models, one per feed the marts read. Each renames the all-text
+CSV columns to snake_case and casts them, and does nothing else: no filtering,
+no derived columns. Patients, encounters, conditions, organizations,
+providers, payers.
 
 **Marts**, 7 dimensions and 2 facts at two different grains. `fct_encounter`
 is one row per encounter, 61,459 rows. `fct_condition` is one row per condition
@@ -232,11 +245,14 @@ checks names is not a control that checks the rule. The third,
 geography rule for the same reason: a full ZIP published under the name `zip3`
 would pass the column test.
 
-The ages on the facts need a test of their own, because an age beside a date
+The ages on the facts need tests of their own, because an age beside a date
 bounds a birth year with no dimension column involved.
 `tests/assert_fact_age_and_date_do_not_imply_over_89.sql` does the arithmetic an
 attacker would do, taking each published age as a bound on a birth year and
 checking it against that patient's latest published date.
+`tests/assert_fact_age_is_withheld_for_the_protected_cohort.sql` asserts the
+rule the facts implement: the age is null on exactly the rows of the patients
+the dimension flags, and present on every other row.
 
 What the tests that read the data do not prove is worth saying plainly, because
 the scoping above is what carries it rather than any test. The facts publish
@@ -254,14 +270,16 @@ doing so.
 ## Layout
 
 ```
-models/staging/synthea/   one stg_synthea__<entity>.sql per source feed
+models/staging/synthea/   one stg_synthea__<entity>.sql per feed the marts read
 models/marts/             dim_<entity>.sql and fct_<event>.sql
 models/overview.md        the landing page of the generated docs site
 macros/                   shared SQL expressions, one macro per file
 tests/                    singular tests, one assertion per file
+analyses/                 profiles of the feeds no model reads, run with dbt show
 scripts/fetch_synthea.py  checksum-pinned data fetch, standard library only
 docs/DECISIONS.md         why the project is shaped the way it is
-.github/workflows/        CI: dbt build on main and on pull requests against it
+.github/workflows/        CI: the build and the profiles, on main and on pull
+                          requests against it
 ```
 
 ## Warehouse

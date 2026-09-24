@@ -7,10 +7,24 @@ sources:
       (synthea_sample_data_csv_nov2021.zip, 1,163 patients, Massachusetts).
       Entirely synthetic: no real patients, no PHI. scripts/fetch_synthea.py
       lands the CSVs in data/raw/synthea/ and dbt-duckdb reads them in place.
-      Every column arrives as text; typing happens in the staging layer.
+      Every column arrives as text; typing happens in the staging layer, or in
+      the analysis that reads a feed declared only to be profiled.
     meta:
       external_location: "read_csv('data/raw/synthea/{name}.csv', header=true, all_varchar=true)"
     tables:
+      - name: claims
+        description: >
+          One row per claim, each against one encounter through APPOINTMENTID.
+          Declared only so analyses/profile_claims.sql can reproduce the profile
+          in docs/DECISIONS.md section 8; no model reads it. Section 29.
+
+      - name: claims_transactions
+        description: >
+          One row per claim transaction, typed CHARGE, PAYMENT, TRANSFERIN or
+          TRANSFEROUT. Declared only so analyses/profile_claims.sql can
+          reproduce the profile in docs/DECISIONS.md section 8; no model reads
+          it. Section 29.
+
       - name: conditions
         description: >
           One row per condition recorded for a patient at an encounter. The
@@ -52,6 +66,13 @@ sources:
             data_tests:
               - unique
               - not_null
+
+      - name: payer_transitions
+        description: >
+          One row per coverage span: a patient, a range of years, a primary
+          payer and any secondary payer. Declared only so
+          analyses/profile_payer_transitions.sql can reproduce the figures in
+          docs/DECISIONS.md section 24; no model reads it. Section 29.
 
       - name: payers
         description: One row per insurance payer, with headquarters address and lifetime coverage totals.

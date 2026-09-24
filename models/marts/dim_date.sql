@@ -1,7 +1,7 @@
 -- Date dimension. The spine is anchored to the encounter data itself, from the
 -- first encounter to the last, so a rebuild produces the same rows on any
--- machine on any day. Nothing in this project uses current_date, because every
--- number the README states has to be reproducible from a dbt build.
+-- machine on any day. Nothing in this project uses current_date, which would
+-- make the numbers a build produces depend on the day it ran.
 
 with bounds as (
 
